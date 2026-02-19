@@ -27,7 +27,7 @@ When implementation, testing, or release process changes, update this file.
 | `notify/codex-slack-notify.sh` | Main notify script for `agent-turn-complete` payloads |
 | `setup.sh` | Installs/updates `notify` in Codex config on macOS/Linux |
 | `setup.ps1` | Installs/updates `notify` in Codex config on Windows |
-| `codex-with-slack.sh` | Wrapper that runs `codex -c "notify=[...]"` |
+| `codex-with-slack.sh` | Wrapper that runs `codex -c "notify=\\"...\\""` |
 | `tests/run-tests.sh` | Regression tests with a mock Slack API |
 | `tests/fixtures/` | Input payload fixtures used by regression tests |
 | `docs/ja/README.md` | Japanese user docs |

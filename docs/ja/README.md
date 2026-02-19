@@ -96,7 +96,7 @@ alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
 `~/.codex/config.toml` に追加:
 
 ```toml
-notify = ["/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"]
+notify = "/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"
 ```
 
 Windows 例:
