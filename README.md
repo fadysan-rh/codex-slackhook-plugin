@@ -15,7 +15,7 @@ Language: English | [日本語](docs/ja/README.md)
 
 ## Overview
 
-When Codex emits a turn-complete notification (`agent-turn-complete` or `after_agent`), this plugin posts to Slack:
+When Codex emits a supported turn-complete notification (for example `agent-turn-complete` or `after_agent`), this plugin posts to Slack:
 
 ```
 You: "Implement authentication"
@@ -31,21 +31,40 @@ Slack:
        Added JWT middleware and tests
 ```
 
+## Requirements
+
+- `bash`
+- `jq`
+- `curl`
+- Codex CLI (`codex`)
+- `git` (only required for `Changes` block generation)
+- Windows runtime: Git Bash (`bash.exe`)
+
 ## Features
 
 | Feature | Condition | What it does |
 |---------|-----------|--------------|
-| **Threaded turn notifications** | Every supported turn-complete event (`agent-turn-complete`, `after_agent`) | First turn starts a thread, later turns reply in the same thread. |
-| **Dual token posting** | `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN` are both set | Each turn is split in-thread: `Prompt` is posted with the user token, `Response` is posted with the bot token. |
+| **Threaded turn notifications** | Every supported turn-complete event (`agent-turn-complete`, `agent_turn_complete`, `after_agent`, `after-agent`, `turn-complete`, `turn_complete`) | First turn starts a thread, later turns reply in the same thread. |
+| **Dual token posting** | `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN` are both set | Each turn is split in-thread: `Prompt` is posted with the user token, `Response` is posted with the bot token. If user-token posting fails, it falls back to bot-token posting. |
 | **Single token fallback** | Only one token is set | Prompt/response are combined into one post with the available token. |
+| **Changed files summary** | Working directory is a Git repository with local changes | Adds a `Changes` block with file paths and line deltas (`+added` / `-deleted`). |
+| **Turn ID suffix** | Payload includes `turn_id` / `turn-id` | Appends `turn` metadata at the end of each Slack message to correlate notifications with turn logs. |
 | **Slack-safe formatting** | All posts | Escapes Slack `mrkdwn` special characters (`<`, `>`, `&`). |
-| **Flexible payload parsing** | Hyphenated and underscored keys | Supports legacy and current Codex notify payloads (`agent-turn-complete` and `after_agent`), including `last-assistant-message`. |
+| **Flexible payload parsing** | Hyphenated and underscored keys | Supports legacy and current Codex notify payloads, including `hook_event.*` and `last-assistant-message` variants. |
+| **Safe session-key fallback** | Session IDs are missing or include unsafe filename characters | Uses hashed state keys (`sid-*`/`cwd-*`) to keep thread-state files safe and isolated. |
 
 ### Smart Threading
 
 - One Slack thread per active session key
 - Starts a new thread when timeout is exceeded or working directory changes
 - Timeout is configurable via `CODEX_SLACK_THREAD_TIMEOUT` (default: `1800`)
+- Thread state refresh is atomic (temp file + move) with mode `600`
+
+### Changed Files Block
+
+- Generated from `git status --porcelain` and diff stats
+- Included only when changes exist
+- Maximum files shown can be tuned with `CODEX_SLACK_CHANGES_MAX_FILES` (default: `15`)
 
 ## Install
 
@@ -53,6 +72,7 @@ Slack:
 
 Installs/updates `notify` in Codex config using this repository's absolute path.
 Safe to rerun: `notify` is kept as a single entry (idempotent update).
+If `config.toml` already exists, a timestamped backup (`config.toml.bak.YYYYMMDDHHMMSS`) is created first.
 
 macOS/Linux:
 
@@ -114,16 +134,20 @@ Set environment variables in your shell profile (or launch environment):
 export CODEX_SLACK_USER_TOKEN="xoxp-..."   # optional: prompt token
 export CODEX_SLACK_BOT_TOKEN="xoxb-..."    # optional: response token
 export CODEX_SLACK_CHANNEL_ID="C0XXXXXXX"
+export CODEX_SLACK_CHANNEL="C0XXXXXXX"     # optional fallback channel var
 export CODEX_SLACK_LOCALE="en"             # en / ja (default: en)
 export CODEX_SLACK_THREAD_TIMEOUT="1800"   # optional, seconds
+export CODEX_SLACK_CHANGES_MAX_FILES="15"  # optional, changed files listed per post
 ```
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `CODEX_SLACK_CHANNEL_ID` | Yes | Target Slack channel ID |
+| `CODEX_SLACK_CHANNEL_ID` | Conditionally | Preferred target Slack channel ID |
+| `CODEX_SLACK_CHANNEL` | Conditionally | Backward-compatible fallback channel variable |
 | `CODEX_SLACK_USER_TOKEN` | Conditionally | Token for prompt posting in dual-token mode |
 | `CODEX_SLACK_BOT_TOKEN` | Conditionally | Token for response posting in dual-token mode |
 | `CODEX_SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
+| `CODEX_SLACK_CHANGES_MAX_FILES` | No | Max changed files shown in `Changes` block (default: `15`) |
 | `CODEX_SLACK_LOCALE` | No | Message locale: `en` or `ja` (default: `en`) |
 | `CODEX_SLACK_NOTIFY_DEBUG` | No | Set `1` to enable debug logs (default: `0`) |
 | `CODEX_SLACK_NOTIFY_DEBUG_LOG` | No | Debug log path (default: `$HOME/.codex/slack-times-debug.log`) |
@@ -131,8 +155,15 @@ export CODEX_SLACK_THREAD_TIMEOUT="1800"   # optional, seconds
 Token rules:
 
 - Both `CODEX_SLACK_USER_TOKEN` and `CODEX_SLACK_BOT_TOKEN`: each turn is split (prompt=user, response=bot)
+- If user-token posting fails in dual-token mode: bot-token fallback still posts the turn
 - Only one token: combined single post with that token
 - No token: no post
+
+Channel rules:
+
+- `CODEX_SLACK_CHANNEL_ID` is used when set
+- Otherwise `CODEX_SLACK_CHANNEL` is used
+- If neither is set: no post
 
 
 ## Slack App Setup
@@ -146,6 +177,8 @@ Token rules:
 
 - State files under `$HOME/.codex/.slack-thread-*` are written with mode `600`
 - Symlinked state files are reset before use (symlink-follow write protection)
+- Thread-state writes use atomic temp-file replacement
+- Unsafe session IDs are hashed before being used in state filenames
 - Debug logging is disabled by default
 
 ## Developer Docs

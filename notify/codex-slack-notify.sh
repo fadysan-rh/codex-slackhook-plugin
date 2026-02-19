@@ -274,22 +274,24 @@ build_changed_files_info() {
   [ -z "$cwd" ] || [ ! -d "$cwd" ] && return 0
   git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 
+  if ! [[ "$max_files" =~ ^[0-9]+$ ]]; then
+    max_files=15
+  fi
+  [ "$max_files" -gt 0 ] || return 0
+
   local has_head="true"
   git -C "$cwd" rev-parse HEAD >/dev/null 2>&1 || has_head="false"
 
   local output=""
   local count=0
-  local total=0
 
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    total=$((total + 1))
-    [ "$count" -ge "$max_files" ] && continue
-    count=$((count + 1))
+    [ "$count" -ge "$max_files" ] && break
 
     local xy="${line:0:2}"
-    local file="${line:3}"
-    file=$(printf "%s" "$file" | sed 's/^"//;s/"$//')
+    local raw_file="${line:3}"
+    raw_file=$(printf "%s" "$raw_file" | sed 's/^"//;s/"$//')
 
     local st
     local x="${xy:0:1}"
@@ -304,17 +306,19 @@ build_changed_files_info() {
       st="M"
     fi
 
-    local diff_path="$file"
-    if [[ "$file" == *" -> "* ]]; then
-      diff_path="${file##* -> }"
+    local diff_path="$raw_file"
+    if [[ "$raw_file" == *" -> "* ]]; then
+      diff_path="${raw_file##* -> }"
+    fi
+
+    # Keep this block file-focused: skip non-file entries (e.g. untracked directories).
+    if [ "$st" = "??" ] && [ ! -f "${cwd}/${diff_path}" ]; then
+      continue
     fi
 
     local added="" deleted=""
     if [ "$st" = "??" ]; then
-      if [ -f "${cwd}/${file}" ]; then
-        added=$(wc -l < "${cwd}/${file}" 2>/dev/null | tr -d ' ')
-      fi
-      [ -z "$added" ] && added="0"
+      added=$(wc -l < "${cwd}/${diff_path}" 2>/dev/null | tr -d ' ')
       deleted="0"
     elif [ "$has_head" = "true" ]; then
       local numline
@@ -332,27 +336,21 @@ build_changed_files_info() {
       fi
     fi
 
-    local entry="${st} ${file}"
-    if [ -n "$added" ] && [ -n "$deleted" ]; then
-      if [ "$added" = "-" ] || [ "$deleted" = "-" ]; then
-        entry="${entry} (binary)"
-      else
-        entry="${entry} (+${added} -${deleted})"
-      fi
+    [ -n "$added" ] || added="0"
+    [ -n "$deleted" ] || deleted="0"
+    if [ "$added" = "-" ] || [ "$deleted" = "-" ]; then
+      added="0"
+      deleted="0"
     fi
+
+    local entry="${diff_path} (+${added} -${deleted})"
 
     if [ -n "$output" ]; then
       output="${output}"$'\n'
     fi
     output="${output}${entry}"
+    count=$((count + 1))
   done < <(git -C "$cwd" status --porcelain 2>/dev/null)
-
-  [ "$total" -eq 0 ] && return 0
-
-  local remaining=$((total - count))
-  if [ "$remaining" -gt 0 ]; then
-    output="${output}"$'\n'"…+${remaining} files"
-  fi
 
   printf "%s" "$output"
 }
@@ -465,6 +463,9 @@ main() {
   local project_info
 
   cwd=$(printf "%s" "$payload" | jq -r '.cwd // .workdir // .current_dir // .["current-dir"] // .hook_event.cwd // .hook_event.workdir // ""')
+  if [ -z "$cwd" ]; then
+    cwd=$(pwd 2>/dev/null || true)
+  fi
   session_raw=$(printf "%s" "$payload" | jq -r '.session_id // .sessionId // .["session-id"] // .thread_id // .threadId // .["thread-id"] // .conversation_id // .conversationId // .["conversation-id"] // .run_id // .runId // .["run-id"] // .session.id // .hook_event.session_id // .hook_event.sessionId // .hook_event["session-id"] // .hook_event.thread_id // .hook_event.threadId // .hook_event["thread-id"] // .hook_event.conversation_id // .hook_event.conversationId // .hook_event["conversation-id"] // .hook_event.run_id // .hook_event.runId // .hook_event["run-id"] // .hook_event.session.id // .metadata.session_id // .metadata.sessionId // .metadata["session-id"] // ""')
   turn_id=$(printf "%s" "$payload" | jq -r '.turn_id // .turnId // .["turn-id"] // .hook_event.turn_id // .hook_event.turnId // .hook_event["turn-id"] // ""')
   debug "parsed event=${event:-unknown} session_raw=${session_raw:-empty} turn_id=${turn_id:-empty} cwd=${cwd:-empty}"
@@ -573,34 +574,41 @@ main() {
     done <<< "$changes_escaped"
   fi
 
+  # Build answer_content: changes block + answer text combined into the Response section.
+  local answer_content=""
+  if [ -n "$changes_block" ] && [ -n "$answer_text" ]; then
+    answer_content="${changes_block}"$'\n\n'"${answer_text}"
+  elif [ -n "$changes_block" ]; then
+    answer_content="${changes_block}"
+  elif [ -n "$answer_text" ]; then
+    answer_content="${answer_text}"
+  fi
+
   local response
   if [ "$dual_token_mode" = "false" ]; then
     local text
     if [ -n "$thread_ts" ]; then
-      if [ -n "$request_text" ] && [ -n "$answer_text" ]; then
-        text=$(printf "*%s:*\n%s\n\n*%s:*\n%s" "$request_label" "$request_text" "$answer_label" "$answer_text")
+      if [ -n "$request_text" ] && [ -n "$answer_content" ]; then
+        text=$(printf "*%s:*\n%s\n\n*%s:*\n%s" "$request_label" "$request_text" "$answer_label" "$answer_content")
       elif [ -n "$request_text" ]; then
         text=$(printf "*%s:*\n%s" "$request_label" "$request_text")
-      elif [ -n "$answer_text" ]; then
-        text=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      elif [ -n "$answer_content" ]; then
+        text=$(printf "*%s:*\n%s" "$answer_label" "$answer_content")
       else
         text="$no_details"
       fi
     else
-      if [ -n "$request_text" ] && [ -n "$answer_text" ]; then
-        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text" "$answer_label" "$answer_text")
+      if [ -n "$request_text" ] && [ -n "$answer_content" ]; then
+        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text" "$answer_label" "$answer_content")
       elif [ -n "$request_text" ]; then
         text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
-      elif [ -n "$answer_text" ]; then
-        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_text")
+      elif [ -n "$answer_content" ]; then
+        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_content")
       else
         text="$no_details"
       fi
     fi
 
-    if [ -n "$changes_block" ]; then
-      text="${text}"$'\n\n'"${changes_block}"
-    fi
     text=$(append_turn_suffix "$text" "$turn_id")
     text="${text:0:3000}"
 
@@ -630,18 +638,25 @@ main() {
     if [ -n "$thread_ts" ]; then
       local request_message=""
       local posted_any="false"
+      local user_post_failed="false"
 
       if [ -n "$request_text" ]; then
         request_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
         request_message="${request_message:0:3000}"
         if ! post_to_slack "$user_token" "$channel" "$request_message" "$thread_ts" >/dev/null; then
-          exit 0
+          user_post_failed="true"
+          debug "WARN: user token post failed on existing thread, fallback to bot token message"
+        else
+          posted_any="true"
         fi
-        posted_any="true"
       fi
 
-      if [ -n "$answer_text" ]; then
-        bot_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      if [ "$user_post_failed" = "true" ] && [ -n "$request_text" ] && [ -n "$answer_content" ]; then
+        bot_message=$(printf "*%s:*\n%s\n\n*%s:*\n%s" "$request_label" "$request_text" "$answer_label" "$answer_content")
+      elif [ "$user_post_failed" = "true" ] && [ -n "$request_text" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
+      elif [ -n "$answer_content" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_content")
       elif [ "$posted_any" = "false" ] && [ -n "$request_text" ]; then
         bot_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
       elif [ "$posted_any" = "false" ]; then
@@ -649,9 +664,6 @@ main() {
       fi
 
       if [ -n "$bot_message" ]; then
-        if [ -n "$changes_block" ]; then
-          bot_message="${bot_message}"$'\n\n'"${changes_block}"
-        fi
         bot_message=$(append_turn_suffix "$bot_message" "$turn_id")
         bot_message="${bot_message:0:3000}"
 
@@ -675,6 +687,32 @@ main() {
       starter_message="${starter_message:0:3000}"
 
       if ! response=$(post_to_slack "$user_token" "$channel" "$starter_message"); then
+        debug "WARN: user token post failed on new thread, fallback to bot token"
+
+        local fallback_message
+        if [ -n "$request_text" ] && [ -n "$answer_content" ]; then
+          fallback_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text" "$answer_label" "$answer_content")
+        elif [ -n "$request_text" ]; then
+          fallback_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
+        elif [ -n "$answer_content" ]; then
+          fallback_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_content")
+        else
+          fallback_message="$no_details"
+        fi
+        fallback_message=$(append_turn_suffix "$fallback_message" "$turn_id")
+        fallback_message="${fallback_message:0:3000}"
+
+        if ! response=$(post_to_slack "$bot_token" "$channel" "$fallback_message"); then
+          exit 0
+        fi
+
+        local fallback_ts
+        fallback_ts=$(printf "%s" "$response" | jq -r '.ts // ""' 2>/dev/null)
+        if [ -n "$fallback_ts" ] && [ "$fallback_ts" != "null" ]; then
+          if ! write_state_file_atomic "$thread_file" "$fallback_ts"; then
+            debug "WARN: failed save thread file"
+          fi
+        fi
         exit 0
       fi
 
@@ -688,15 +726,12 @@ main() {
         debug "WARN: failed save thread file"
       fi
 
-      if [ -n "$answer_text" ]; then
-        bot_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      if [ -n "$answer_content" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_content")
       elif [ -n "$request_text" ]; then
         bot_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
       else
         bot_message="$no_details"
-      fi
-      if [ -n "$changes_block" ]; then
-        bot_message="${bot_message}"$'\n\n'"${changes_block}"
       fi
       bot_message=$(append_turn_suffix "$bot_message" "$turn_id")
       bot_message="${bot_message:0:3000}"

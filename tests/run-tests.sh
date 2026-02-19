@@ -121,6 +121,16 @@ if [ -n "${MOCK_CURL_TRACE:-}" ]; then
   printf "%s\t%s\n" "$auth_token" "$payload_one_line" >> "$MOCK_CURL_TRACE"
 fi
 
+if [ -n "${MOCK_CURL_FAIL_TOKENS:-}" ]; then
+  IFS=',' read -r -a fail_tokens <<< "$MOCK_CURL_FAIL_TOKENS"
+  for fail_token in "${fail_tokens[@]}"; do
+    if [ "$auth_token" = "$fail_token" ]; then
+      echo "{\"ok\":false,\"error\":\"invalid_auth\"}"
+      exit 0
+    fi
+  done
+fi
+
 echo "{\"ok\":true,\"channel\":\"C_TEST\",\"ts\":\"${MOCK_CURL_TS:-1710000000.000001}\"}"
 EOS
   chmod +x "${mock_bin}/curl"
@@ -161,12 +171,14 @@ run_notify_with_tokens() {
   local user_token="$6"
   local bot_token="$7"
   local trace_file="$8"
+  local fail_tokens="${9:-}"
 
   local status=0
   HOME="$test_home" \
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_CAPTURE="$capture_file" \
   MOCK_CURL_TRACE="$trace_file" \
+  MOCK_CURL_FAIL_TOKENS="$fail_tokens" \
   MOCK_CURL_TS="$mock_ts" \
   CODEX_SLACK_USER_TOKEN="$user_token" \
   CODEX_SLACK_BOT_TOKEN="$bot_token" \
@@ -496,6 +508,47 @@ test_dual_tokens_split_posts() {
   rm -rf "$tmp_dir"
 }
 
+test_dual_tokens_fallback_to_bot_when_user_token_fails_on_first_turn() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-dual-fallback-first.json"
+  local trace_file="${tmp_dir}/trace-dual-fallback-first.log"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload
+  payload=$(render_fixture "${FIXTURES_DIR}/notify-hyphenated.json" "${tmp_dir}/repo")
+
+  local status
+  status=$(run_notify_with_tokens "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000301" "xoxp-user" "xoxb-bot" "$trace_file" "xoxp-user")
+
+  local line_count
+  line_count=$(wc -l < "$trace_file" | tr -d ' ')
+  local first_token
+  local second_token
+  first_token=$(awk 'NR==1 {print $1}' "$trace_file")
+  second_token=$(awk 'NR==2 {print $1}' "$trace_file")
+  local second_payload
+  second_payload=$(awk -F '\t' 'NR==2 {print $2}' "$trace_file")
+  local second_thread_ts
+  second_thread_ts=$(printf "%s" "$second_payload" | jq -r '.thread_ts // ""')
+  local second_text
+  second_text=$(printf "%s" "$second_payload" | jq -r '.text // ""')
+
+  assert_zero "dual_tokens_fallback_first_exit" "$status"
+  assert_equals "dual_tokens_fallback_first_calls" "$line_count" "2"
+  assert_equals "dual_tokens_fallback_first_user_attempt" "$first_token" "xoxp-user"
+  assert_equals "dual_tokens_fallback_first_bot_post" "$second_token" "xoxb-bot"
+  assert_equals "dual_tokens_fallback_first_no_thread_ts" "$second_thread_ts" ""
+  assert_contains "dual_tokens_fallback_first_has_request" "$second_text" "*Prompt:*"
+  assert_contains "dual_tokens_fallback_first_has_answer" "$second_text" "*Response:*"
+
+  rm -rf "$tmp_dir"
+}
+
 test_changed_files_included_in_notification() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -542,6 +595,8 @@ test_changed_files_included_in_notification() {
   assert_contains "changed_files_has_newfile" "$text" "newfile.txt"
   assert_contains "changed_files_has_newfile_diff" "$text" "(+1 -0)"
   assert_contains "changed_files_backtick_wrap" "$text" '`'
+  assert_not_contains "changed_files_no_status_prefix" "$text" "M existing.txt"
+  assert_not_contains "changed_files_no_diff_label" "$text" "*Diff:*"
 
   rm -rf "$tmp_dir"
 }
@@ -640,6 +695,50 @@ test_dual_tokens_followup_turn_includes_request_and_answer() {
   rm -rf "$tmp_dir"
 }
 
+test_dual_tokens_fallback_on_followup_when_user_token_fails() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-dual-fallback-followup.json"
+  local trace_file="${tmp_dir}/trace-dual-fallback-followup.log"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload
+  payload=$(render_fixture "${FIXTURES_DIR}/notify-hyphenated.json" "${tmp_dir}/repo")
+
+  local status1
+  local status2
+  status1=$(run_notify_with_tokens "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000401" "xoxp-user" "xoxb-bot" "$trace_file")
+  status2=$(run_notify_with_tokens "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000402" "xoxp-user" "xoxb-bot" "$trace_file" "xoxp-user")
+
+  local line_count
+  line_count=$(wc -l < "$trace_file" | tr -d ' ')
+  local third_token
+  local fourth_token
+  third_token=$(awk 'NR==3 {print $1}' "$trace_file")
+  fourth_token=$(awk 'NR==4 {print $1}' "$trace_file")
+  local fourth_payload
+  fourth_payload=$(awk -F '\t' 'NR==4 {print $2}' "$trace_file")
+  local fourth_thread_ts
+  fourth_thread_ts=$(printf "%s" "$fourth_payload" | jq -r '.thread_ts // ""')
+  local fourth_text
+  fourth_text=$(printf "%s" "$fourth_payload" | jq -r '.text // ""')
+
+  assert_zero "dual_tokens_fallback_followup_first_call_exit" "$status1"
+  assert_zero "dual_tokens_fallback_followup_second_call_exit" "$status2"
+  assert_equals "dual_tokens_fallback_followup_total_posts" "$line_count" "4"
+  assert_equals "dual_tokens_fallback_followup_third_user_attempt" "$third_token" "xoxp-user"
+  assert_equals "dual_tokens_fallback_followup_fourth_bot_post" "$fourth_token" "xoxb-bot"
+  assert_equals "dual_tokens_fallback_followup_thread_ts" "$fourth_thread_ts" "1710000000.000401"
+  assert_contains "dual_tokens_fallback_followup_has_request" "$fourth_text" "*Prompt:*"
+  assert_contains "dual_tokens_fallback_followup_has_answer" "$fourth_text" "*Response:*"
+
+  rm -rf "$tmp_dir"
+}
+
 test_setup_script_is_idempotent() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -723,7 +822,9 @@ main() {
   test_changed_files_included_in_notification
   test_no_changes_no_changes_block
   test_dual_tokens_split_posts
+  test_dual_tokens_fallback_to_bot_when_user_token_fails_on_first_turn
   test_dual_tokens_followup_turn_includes_request_and_answer
+  test_dual_tokens_fallback_on_followup_when_user_token_fails
 
   echo "----"
   echo "Passed: ${PASS_COUNT}"
