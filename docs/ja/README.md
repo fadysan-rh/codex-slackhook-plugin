@@ -1,4 +1,4 @@
-# codex-slackhook-plugin
+# codex-slack-notify-plugin
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
 [![Codex CLI](https://img.shields.io/badge/Codex_CLI-Notify_Plugin-0A7B83)](../../README.md)
@@ -92,13 +92,13 @@ Windows では `setup.ps1` が `notify = ["bash.exe", ".../notify/codex-slack-no
 `config.toml` を編集せずに `notify` を有効化できます。
 
 ```bash
-/path/to/codex-slackhook-plugin/codex-with-slack.sh "your prompt"
+/path/to/codex-slack-notify-plugin/codex-with-slack.sh "your prompt"
 ```
 
 必要なら alias 化:
 
 ```bash
-alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
+alias codexs='/path/to/codex-slack-notify-plugin/codex-with-slack.sh'
 ```
 
 ### 方法 C: `config.toml` 手動設定
@@ -106,13 +106,13 @@ alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
 `~/.codex/config.toml` に追加:
 
 ```toml
-notify = ["/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"]
+notify = ["/absolute/path/to/codex-slack-notify-plugin/notify/codex-slack-notify.sh"]
 ```
 
 Windows 例:
 
 ```toml
-notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhook-plugin\\notify\\codex-slack-notify.sh"]
+notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slack-notify-plugin\\notify\\codex-slack-notify.sh"]
 ```
 
 ## Configuration

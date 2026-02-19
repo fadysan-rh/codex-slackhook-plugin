@@ -1,4 +1,4 @@
-# codex-slackhook-plugin
+# codex-slack-notify-plugin
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Codex CLI](https://img.shields.io/badge/Codex_CLI-Notify_Plugin-0A7B83)](README.md)
@@ -103,13 +103,13 @@ On Windows, `setup.ps1` writes `notify = ["bash.exe", ".../notify/codex-slack-no
 Run Codex with `notify` enabled without editing config:
 
 ```bash
-/path/to/codex-slackhook-plugin/codex-with-slack.sh "your prompt"
+/path/to/codex-slack-notify-plugin/codex-with-slack.sh "your prompt"
 ```
 
 Optional alias:
 
 ```bash
-alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
+alias codexs='/path/to/codex-slack-notify-plugin/codex-with-slack.sh'
 ```
 
 ### Option C: manual `config.toml`
@@ -117,13 +117,13 @@ alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
 Add to `~/.codex/config.toml`:
 
 ```toml
-notify = ["/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"]
+notify = ["/absolute/path/to/codex-slack-notify-plugin/notify/codex-slack-notify.sh"]
 ```
 
 Windows example:
 
 ```toml
-notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhook-plugin\\notify\\codex-slack-notify.sh"]
+notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slack-notify-plugin\\notify\\codex-slack-notify.sh"]
 ```
 
 ## Configuration

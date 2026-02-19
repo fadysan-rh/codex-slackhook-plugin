@@ -1,4 +1,4 @@
-# Contributing to codex-slackhook-plugin
+# Contributing to codex-slack-notify-plugin
 
 Thanks for contributing.
 
