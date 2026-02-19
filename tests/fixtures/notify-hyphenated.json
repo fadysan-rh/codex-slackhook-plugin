@@ -1,0 +1,22 @@
+{
+  "event": "agent-turn-complete",
+  "session-id": "sess-123",
+  "turn-id": "turn-1",
+  "cwd": "__CWD__",
+  "input-messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "Implement auth <!channel>" }
+      ]
+    }
+  ],
+  "output-messages": [
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "output_text", "text": "Done & <ok>" }
+      ]
+    }
+  ]
+}

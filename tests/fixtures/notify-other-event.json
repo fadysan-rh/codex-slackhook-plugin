@@ -1,0 +1,12 @@
+{
+  "event": "tool-call-started",
+  "session-id": "sess-ignored",
+  "cwd": "__CWD__",
+  "input-messages": [
+    {
+      "role": "user",
+      "content": "ignored"
+    }
+  ],
+  "output-messages": []
+}

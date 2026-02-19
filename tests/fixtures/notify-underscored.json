@@ -1,0 +1,20 @@
+{
+  "event": "agent-turn-complete",
+  "session_id": "sess_underscore",
+  "turn_id": "turn_2",
+  "cwd": "__CWD__",
+  "input_messages": [
+    {
+      "role": "user",
+      "content": "Please summarize changes"
+    }
+  ],
+  "output_messages": [
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "output_text", "text": "Summary ready" }
+      ]
+    }
+  ]
+}
