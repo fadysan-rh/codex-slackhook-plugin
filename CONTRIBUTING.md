@@ -38,7 +38,7 @@ When implementation, testing, or release process changes, update this file.
 2. Run installer if you want to test with real Codex CLI:
    - macOS/Linux: `./setup.sh`
    - Windows: `./setup.ps1`
-3. Set environment variables (`SLACK_CHANNEL`, tokens, locale, timeout) as needed.
+3. Set environment variables (`CODEX_SLACK_CHANNEL`, tokens, locale, timeout) as needed.
 
 For isolated local checks, prefer a temporary `CODEX_HOME`:
 

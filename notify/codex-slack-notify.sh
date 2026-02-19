@@ -1,8 +1,8 @@
 #!/bin/bash
 set -uo pipefail
 
-DEBUG_ENABLED="${SLACK_NOTIFY_DEBUG:-0}"
-DEBUG_LOG="${SLACK_NOTIFY_DEBUG_LOG:-$HOME/.codex/slack-times-debug.log}"
+DEBUG_ENABLED="${CODEX_SLACK_NOTIFY_DEBUG:-0}"
+DEBUG_LOG="${CODEX_SLACK_NOTIFY_DEBUG_LOG:-$HOME/.codex/slack-times-debug.log}"
 
 init_debug_log() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
@@ -278,15 +278,15 @@ main() {
   local channel
   local payload
 
-  locale=$(resolve_locale "${SLACK_LOCALE:-}")
-  user_token="${SLACK_USER_TOKEN:-}"
-  bot_token="${SLACK_BOT_TOKEN:-}"
+  locale=$(resolve_locale "${CODEX_SLACK_LOCALE:-}")
+  user_token="${CODEX_SLACK_USER_TOKEN:-}"
+  bot_token="${CODEX_SLACK_BOT_TOKEN:-}"
   slack_token="${bot_token:-${user_token:-}}"
   dual_token_mode="false"
   if [ -n "$user_token" ] && [ -n "$bot_token" ]; then
     dual_token_mode="true"
   fi
-  channel="${SLACK_CHANNEL:-}"
+  channel="${CODEX_SLACK_CHANNEL:-}"
 
   if ! command -v jq >/dev/null 2>&1; then
     exit 0
@@ -346,7 +346,7 @@ main() {
 
   thread_file="$HOME/.codex/.slack-thread-${session_key}"
   thread_cwd_file="${thread_file}.cwd"
-  thread_timeout="${SLACK_THREAD_TIMEOUT:-1800}"
+  thread_timeout="${CODEX_SLACK_THREAD_TIMEOUT:-1800}"
   thread_ts=""
 
   if ! [[ "$thread_timeout" =~ ^[0-9]+$ ]]; then

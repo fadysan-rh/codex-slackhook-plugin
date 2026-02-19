@@ -144,9 +144,9 @@ run_notify() {
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_CAPTURE="$capture_file" \
   MOCK_CURL_TS="$mock_ts" \
-  SLACK_USER_TOKEN="" \
-  SLACK_BOT_TOKEN="xoxb-test" \
-  SLACK_CHANNEL="C_TEST" \
+  CODEX_SLACK_USER_TOKEN="" \
+  CODEX_SLACK_BOT_TOKEN="xoxb-test" \
+  CODEX_SLACK_CHANNEL="C_TEST" \
     bash "$NOTIFY_SCRIPT" "$payload" >/dev/null 2>&1 || status=$?
 
   echo "$status"
@@ -168,9 +168,9 @@ run_notify_with_tokens() {
   MOCK_CURL_CAPTURE="$capture_file" \
   MOCK_CURL_TRACE="$trace_file" \
   MOCK_CURL_TS="$mock_ts" \
-  SLACK_USER_TOKEN="$user_token" \
-  SLACK_BOT_TOKEN="$bot_token" \
-  SLACK_CHANNEL="C_TEST" \
+  CODEX_SLACK_USER_TOKEN="$user_token" \
+  CODEX_SLACK_BOT_TOKEN="$bot_token" \
+  CODEX_SLACK_CHANNEL="C_TEST" \
     bash "$NOTIFY_SCRIPT" "$payload" >/dev/null 2>&1 || status=$?
 
   echo "$status"

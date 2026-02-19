@@ -36,7 +36,7 @@ Slack:
 | Feature | Condition | What it does |
 |---------|-----------|--------------|
 | **Threaded turn notifications** | Every `agent-turn-complete` event | First turn starts a thread, later turns reply in the same thread. |
-| **Dual token posting** | `SLACK_USER_TOKEN` + `SLACK_BOT_TOKEN` are both set | Request is posted as user token, answer is posted as bot token. |
+| **Dual token posting** | `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN` are both set | Request is posted as user token, answer is posted as bot token. |
 | **Single token fallback** | Only one token is set | Request/answer are combined into one post with the available token. |
 | **Slack-safe formatting** | All posts | Escapes Slack `mrkdwn` special characters (`<`, `>`, `&`). |
 | **Flexible payload parsing** | Hyphenated and underscored keys | Supports both formats for event/session/turn/input/output fields. |
@@ -45,7 +45,7 @@ Slack:
 
 - One Slack thread per active session key
 - Starts a new thread when timeout is exceeded or working directory changes
-- Timeout is configurable via `SLACK_THREAD_TIMEOUT` (default: `1800`)
+- Timeout is configurable via `CODEX_SLACK_THREAD_TIMEOUT` (default: `1800`)
 
 ## Install
 
@@ -110,26 +110,26 @@ notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhoo
 Set environment variables in your shell profile (or launch environment):
 
 ```bash
-export SLACK_USER_TOKEN="xoxp-..."   # optional: request token
-export SLACK_BOT_TOKEN="xoxb-..."    # optional: answer token
-export SLACK_CHANNEL="C0XXXXXXX"
-export SLACK_LOCALE="en"             # en / ja (default: en)
-export SLACK_THREAD_TIMEOUT="1800"   # optional, seconds
+export CODEX_SLACK_USER_TOKEN="xoxp-..."   # optional: request token
+export CODEX_SLACK_BOT_TOKEN="xoxb-..."    # optional: answer token
+export CODEX_SLACK_CHANNEL="C0XXXXXXX"
+export CODEX_SLACK_LOCALE="en"             # en / ja (default: en)
+export CODEX_SLACK_THREAD_TIMEOUT="1800"   # optional, seconds
 ```
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `SLACK_CHANNEL` | Yes | Target Slack channel ID |
-| `SLACK_USER_TOKEN` | Conditionally | Token for request posting in dual-token mode |
-| `SLACK_BOT_TOKEN` | Conditionally | Token for answer posting in dual-token mode |
-| `SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
-| `SLACK_LOCALE` | No | Message locale: `en` or `ja` (default: `en`) |
-| `SLACK_NOTIFY_DEBUG` | No | Set `1` to enable debug logs (default: `0`) |
-| `SLACK_NOTIFY_DEBUG_LOG` | No | Debug log path (default: `$HOME/.codex/slack-times-debug.log`) |
+| `CODEX_SLACK_CHANNEL` | Yes | Target Slack channel ID |
+| `CODEX_SLACK_USER_TOKEN` | Conditionally | Token for request posting in dual-token mode |
+| `CODEX_SLACK_BOT_TOKEN` | Conditionally | Token for answer posting in dual-token mode |
+| `CODEX_SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
+| `CODEX_SLACK_LOCALE` | No | Message locale: `en` or `ja` (default: `en`) |
+| `CODEX_SLACK_NOTIFY_DEBUG` | No | Set `1` to enable debug logs (default: `0`) |
+| `CODEX_SLACK_NOTIFY_DEBUG_LOG` | No | Debug log path (default: `$HOME/.codex/slack-times-debug.log`) |
 
 Token rules:
 
-- Both `SLACK_USER_TOKEN` and `SLACK_BOT_TOKEN`: split posting (request=user, answer=bot)
+- Both `CODEX_SLACK_USER_TOKEN` and `CODEX_SLACK_BOT_TOKEN`: split posting (request=user, answer=bot)
 - Only one token: combined single post with that token
 - No token: no post
 

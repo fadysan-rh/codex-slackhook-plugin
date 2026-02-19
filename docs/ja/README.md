@@ -36,7 +36,7 @@ Slack:
 | 機能 | 条件 | 動作 |
 |------|------|------|
 | **スレッド通知** | `agent-turn-complete` ごと | 初回ターンは新規スレッド、2回目以降は同一スレッドへ返信します。 |
-| **デュアルトークン投稿** | `SLACK_USER_TOKEN` と `SLACK_BOT_TOKEN` が両方設定済み | リクエストは user token、回答は bot token で投稿します。 |
+| **デュアルトークン投稿** | `CODEX_SLACK_USER_TOKEN` と `CODEX_SLACK_BOT_TOKEN` が両方設定済み | リクエストは user token、回答は bot token で投稿します。 |
 | **単一トークンフォールバック** | どちらか一方のトークンのみ設定 | リクエスト/回答を1投稿にまとめて送信します。 |
 | **Slack向けエスケープ** | 全投稿共通 | Slack `mrkdwn` 特殊文字（`<`, `>`, `&`）をエスケープします。 |
 | **柔軟なペイロード解析** | ハイフン形式/アンダースコア形式 | event/session/turn/input/output の両キー形式を受け付けます。 |
@@ -45,7 +45,7 @@ Slack:
 
 - アクティブなセッションキーごとに 1 スレッド
 - タイムアウト超過、または作業ディレクトリ変更時に新規スレッドを開始
-- `SLACK_THREAD_TIMEOUT` で調整可能（既定: `1800` 秒）
+- `CODEX_SLACK_THREAD_TIMEOUT` で調整可能（既定: `1800` 秒）
 
 ## Install
 
@@ -110,26 +110,26 @@ notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhoo
 環境変数を設定してください（シェル設定ファイルや起動環境など）。
 
 ```bash
-export SLACK_USER_TOKEN="xoxp-..."   # 任意: リクエスト投稿用
-export SLACK_BOT_TOKEN="xoxb-..."    # 任意: 回答投稿用
-export SLACK_CHANNEL="C0XXXXXXX"
-export SLACK_LOCALE="ja"             # en / ja（既定: en）
-export SLACK_THREAD_TIMEOUT="1800"   # 任意、秒
+export CODEX_SLACK_USER_TOKEN="xoxp-..."   # 任意: リクエスト投稿用
+export CODEX_SLACK_BOT_TOKEN="xoxb-..."    # 任意: 回答投稿用
+export CODEX_SLACK_CHANNEL="C0XXXXXXX"
+export CODEX_SLACK_LOCALE="ja"             # en / ja（既定: en）
+export CODEX_SLACK_THREAD_TIMEOUT="1800"   # 任意、秒
 ```
 
 | 変数 | 必須 | 説明 |
 |------|:----:|------|
-| `SLACK_CHANNEL` | Yes | 投稿先 Slack チャンネル ID |
-| `SLACK_USER_TOKEN` | 条件付き | デュアルトークン時のリクエスト投稿用トークン |
-| `SLACK_BOT_TOKEN` | 条件付き | デュアルトークン時の回答投稿用トークン |
-| `SLACK_THREAD_TIMEOUT` | No | 新規スレッド開始までの秒数（既定: `1800`） |
-| `SLACK_LOCALE` | No | メッセージ言語: `en` / `ja`（既定: `en`） |
-| `SLACK_NOTIFY_DEBUG` | No | `1` でデバッグログ有効化（既定: `0`） |
-| `SLACK_NOTIFY_DEBUG_LOG` | No | デバッグログ出力先（既定: `$HOME/.codex/slack-times-debug.log`） |
+| `CODEX_SLACK_CHANNEL` | Yes | 投稿先 Slack チャンネル ID |
+| `CODEX_SLACK_USER_TOKEN` | 条件付き | デュアルトークン時のリクエスト投稿用トークン |
+| `CODEX_SLACK_BOT_TOKEN` | 条件付き | デュアルトークン時の回答投稿用トークン |
+| `CODEX_SLACK_THREAD_TIMEOUT` | No | 新規スレッド開始までの秒数（既定: `1800`） |
+| `CODEX_SLACK_LOCALE` | No | メッセージ言語: `en` / `ja`（既定: `en`） |
+| `CODEX_SLACK_NOTIFY_DEBUG` | No | `1` でデバッグログ有効化（既定: `0`） |
+| `CODEX_SLACK_NOTIFY_DEBUG_LOG` | No | デバッグログ出力先（既定: `$HOME/.codex/slack-times-debug.log`） |
 
 トークン挙動:
 
-- `SLACK_USER_TOKEN` + `SLACK_BOT_TOKEN`: 投稿分離（Request は user / Answer は bot）
+- `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN`: 投稿分離（Request は user / Answer は bot）
 - どちらか一方のみ: そのトークンで 1 投稿
 - どちらも未設定: 投稿しない
 
