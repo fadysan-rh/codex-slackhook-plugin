@@ -19,6 +19,8 @@ When Codex completes a turn (`agent-turn-complete`), this notify command posts t
 ## Files
 
 - `notify/codex-slack-notify.sh`: main notify script
+- `setup.sh`: installs/updates Codex `notify` config with absolute path
+- `setup.ps1`: Windows PowerShell installer for Codex `notify` config
 - `codex-with-slack.sh`: wrapper that runs `codex -c "notify=[...]"`
 - `tests/run-tests.sh`: local regression tests with mock Slack API
 
@@ -47,7 +49,35 @@ Token behavior:
 - only one token set: single combined post with the available token
 - none set: no post
 
-### Option A: wrapper script (recommended)
+### Option A: setup script (recommended)
+
+Installs `notify` into Codex config using this repository's absolute path.
+
+macOS/Linux:
+
+```bash
+./setup.sh
+```
+
+Windows (PowerShell):
+
+```powershell
+.\setup.ps1
+```
+
+If you use a custom Codex home:
+
+```bash
+CODEX_HOME="/path/to/codex-home" ./setup.sh
+```
+
+```powershell
+$env:CODEX_HOME="C:\path\to\codex-home"; .\setup.ps1
+```
+
+On Windows, `setup.ps1` configures `notify` as `["bash.exe", ".../notify/codex-slack-notify.sh"]`, so Git Bash is required.
+
+### Option B: wrapper script
 
 Use the wrapper so the notify command is always enabled without editing config:
 
@@ -61,12 +91,18 @@ You can alias it:
 alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
 ```
 
-### Option B: `~/.codex/config.toml`
+### Option C: `~/.codex/config.toml` (manual)
 
 Add a top-level `notify` command:
 
 ```toml
 notify = ["/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"]
+```
+
+Windows manual example:
+
+```toml
+notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhook-plugin\\notify\\codex-slack-notify.sh"]
 ```
 
 ## Security notes
