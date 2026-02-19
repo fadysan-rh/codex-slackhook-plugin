@@ -1,8 +1,8 @@
 #!/bin/bash
 set -uo pipefail
 
-DEBUG_ENABLED="${SLACK_HOOK_DEBUG:-0}"
-DEBUG_LOG="${SLACK_HOOK_DEBUG_LOG:-$HOME/.codex/slack-times-debug.log}"
+DEBUG_ENABLED="${SLACK_NOTIFY_DEBUG:-0}"
+DEBUG_LOG="${SLACK_NOTIFY_DEBUG_LOG:-$HOME/.codex/slack-times-debug.log}"
 
 init_debug_log() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
@@ -253,16 +253,39 @@ post_to_slack() {
   return 0
 }
 
+append_turn_suffix() {
+  local text="$1"
+  local turn_id="$2"
+  if [ -z "$turn_id" ]; then
+    printf "%s" "$text"
+    return 0
+  fi
+  local turn_suffix
+  local nl
+  nl=$'\n'
+  turn_suffix=$(escape_mrkdwn "$turn_id")
+  printf "%s%s%s\`turn\`: %s" "$text" "$nl" "$nl" "$turn_suffix"
+}
+
 main() {
   init_debug_log
 
   local locale
   local slack_token
+  local user_token
+  local bot_token
+  local dual_token_mode
   local channel
   local payload
 
   locale=$(resolve_locale "${SLACK_LOCALE:-}")
-  slack_token="${SLACK_BOT_TOKEN:-${SLACK_USER_TOKEN:-}}"
+  user_token="${SLACK_USER_TOKEN:-}"
+  bot_token="${SLACK_BOT_TOKEN:-}"
+  slack_token="${bot_token:-${user_token:-}}"
+  dual_token_mode="false"
+  if [ -n "$user_token" ] && [ -n "$bot_token" ]; then
+    dual_token_mode="true"
+  fi
   channel="${SLACK_CHANNEL:-}"
 
   if ! command -v jq >/dev/null 2>&1; then
@@ -384,59 +407,146 @@ main() {
   repo_dir_label=$(i18n_text "$locale" "repo_dir_label")
   no_details=$(i18n_text "$locale" "no_details")
 
-  local text
-  if [ -n "$thread_ts" ]; then
-    if [ -n "$request_text" ] && [ -n "$answer_text" ]; then
-      text=$(printf "*%s:*\n%s\n\n*%s:*\n%s" "$request_label" "$request_text" "$answer_label" "$answer_text")
-    elif [ -n "$request_text" ]; then
-      text=$(printf "*%s:*\n%s" "$request_label" "$request_text")
-    elif [ -n "$answer_text" ]; then
-      text=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
-    else
-      text="$no_details"
-    fi
-  else
-    if [ -n "$request_text" ] && [ -n "$answer_text" ]; then
-      text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text" "$answer_label" "$answer_text")
-    elif [ -n "$request_text" ]; then
-      text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
-    elif [ -n "$answer_text" ]; then
-      text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_text")
-    else
-      text="$no_details"
-    fi
-  fi
-
-  if [ -n "$turn_id" ]; then
-    local turn_suffix
-    turn_suffix=$(escape_mrkdwn "$turn_id")
-    text="${text}\n\n\`turn\`: ${turn_suffix}"
-  fi
-
-  text="${text:0:3000}"
-
   local response
-  if [ -n "$thread_ts" ]; then
-    if ! response=$(post_to_slack "$slack_token" "$channel" "$text" "$thread_ts"); then
-      exit 0
+  if [ "$dual_token_mode" = "false" ]; then
+    local text
+    if [ -n "$thread_ts" ]; then
+      if [ -n "$request_text" ] && [ -n "$answer_text" ]; then
+        text=$(printf "*%s:*\n%s\n\n*%s:*\n%s" "$request_label" "$request_text" "$answer_label" "$answer_text")
+      elif [ -n "$request_text" ]; then
+        text=$(printf "*%s:*\n%s" "$request_label" "$request_text")
+      elif [ -n "$answer_text" ]; then
+        text=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      else
+        text="$no_details"
+      fi
+    else
+      if [ -n "$request_text" ] && [ -n "$answer_text" ]; then
+        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text" "$answer_label" "$answer_text")
+      elif [ -n "$request_text" ]; then
+        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
+      elif [ -n "$answer_text" ]; then
+        text=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_text")
+      else
+        text="$no_details"
+      fi
     fi
-    if ! write_state_file_atomic "$thread_file" "$thread_ts"; then
-      debug "WARN: failed refresh thread file"
+
+    text=$(append_turn_suffix "$text" "$turn_id")
+    text="${text:0:3000}"
+
+    if [ -n "$thread_ts" ]; then
+      if ! response=$(post_to_slack "$slack_token" "$channel" "$text" "$thread_ts"); then
+        exit 0
+      fi
+      if ! write_state_file_atomic "$thread_file" "$thread_ts"; then
+        debug "WARN: failed refresh thread file"
+      fi
+    else
+      if ! response=$(post_to_slack "$slack_token" "$channel" "$text"); then
+        exit 0
+      fi
+      local new_ts_single
+      new_ts_single=$(printf "%s" "$response" | jq -r '.ts // ""' 2>/dev/null)
+      if [ -n "$new_ts_single" ] && [ "$new_ts_single" != "null" ]; then
+        if ! write_state_file_atomic "$thread_file" "$new_ts_single"; then
+          debug "WARN: failed save thread file"
+        fi
+      fi
     fi
   else
-    if ! response=$(post_to_slack "$slack_token" "$channel" "$text"); then
-      exit 0
+    local request_message=""
+    local answer_message=""
+    local posted_any="false"
+
+    if [ -n "$request_text" ]; then
+      if [ -n "$thread_ts" ]; then
+        request_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
+      else
+        request_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
+      fi
     fi
-    local new_ts
-    new_ts=$(printf "%s" "$response" | jq -r '.ts // ""' 2>/dev/null)
-    if [ -n "$new_ts" ] && [ "$new_ts" != "null" ]; then
-      if ! write_state_file_atomic "$thread_file" "$new_ts"; then
+
+    if [ -n "$answer_text" ]; then
+      if [ -n "$thread_ts" ] || [ -n "$request_text" ]; then
+        answer_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      else
+        answer_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_text")
+      fi
+    fi
+
+    if [ -n "$answer_message" ]; then
+      answer_message=$(append_turn_suffix "$answer_message" "$turn_id")
+      answer_message="${answer_message:0:3000}"
+    elif [ -n "$request_message" ]; then
+      request_message=$(append_turn_suffix "$request_message" "$turn_id")
+      request_message="${request_message:0:3000}"
+    fi
+
+    if [ -n "$thread_ts" ]; then
+      if [ -n "$request_message" ]; then
+        if ! post_to_slack "$user_token" "$channel" "$request_message" "$thread_ts" >/dev/null; then
+          exit 0
+        fi
+        posted_any="true"
+      fi
+      if [ -n "$answer_message" ]; then
+        if ! post_to_slack "$bot_token" "$channel" "$answer_message" "$thread_ts" >/dev/null; then
+          exit 0
+        fi
+        posted_any="true"
+      fi
+      if [ "$posted_any" = "true" ]; then
+        if ! write_state_file_atomic "$thread_file" "$thread_ts"; then
+          debug "WARN: failed refresh thread file"
+        fi
+      fi
+    else
+      local first_message=""
+      local first_token=""
+      local second_message=""
+      local second_token=""
+
+      if [ -n "$request_message" ]; then
+        first_message="$request_message"
+        first_token="$user_token"
+        if [ -n "$answer_message" ]; then
+          second_message="$answer_message"
+          second_token="$bot_token"
+        fi
+      elif [ -n "$answer_message" ]; then
+        first_message="$answer_message"
+        first_token="$bot_token"
+      fi
+
+      if [ -z "$first_message" ]; then
+        first_message=$(append_turn_suffix "$no_details" "$turn_id")
+        first_token="$bot_token"
+      fi
+
+      if ! response=$(post_to_slack "$first_token" "$channel" "$first_message"); then
+        exit 0
+      fi
+
+      local new_ts_dual
+      new_ts_dual=$(printf "%s" "$response" | jq -r '.ts // ""' 2>/dev/null)
+      if [ -z "$new_ts_dual" ] || [ "$new_ts_dual" = "null" ]; then
+        exit 0
+      fi
+
+      if ! write_state_file_atomic "$thread_file" "$new_ts_dual"; then
         debug "WARN: failed save thread file"
+      fi
+
+      if [ -n "$second_message" ]; then
+        if ! post_to_slack "$second_token" "$channel" "$second_message" "$new_ts_dual" >/dev/null; then
+          exit 0
+        fi
       fi
     fi
   fi
 
-  debug "posted turn session=${session_key} event=${event:-unknown} req_len=${#request_raw} ans_len=${#answer_raw}"
+  debug "posted turn session=${session_key} event=${event:-unknown} req_len=${#request_raw} ans_len=${#answer_raw} dual_mode=${dual_token_mode}"
   exit 0
 }
 
