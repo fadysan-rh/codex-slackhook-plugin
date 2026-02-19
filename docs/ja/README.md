@@ -2,7 +2,7 @@
 
 `notify` を使って Codex CLI のターン完了を Slack に通知するプラグインです。
 
-このリポジトリは `cc-slackhook`（Claude Code プラグイン）とは分離されており、Codex CLI 専用です。
+Claude Code 用のプラグイン（[`cc-slackhook-plugin`](https://github.com/fadysan-rh/cc-slackhook-plugin)）もあります。
 
 言語: [English](../../README.md) | 日本語
 

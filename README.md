@@ -2,7 +2,7 @@
 
 Slack notifications for Codex CLI turns via `notify`.
 
-This repository is separate from `cc-slackhook` (Claude Code plugin) and is dedicated to Codex CLI.
+There is also a plugin for Claude Code: [`cc-slackhook-plugin`](https://github.com/fadysan-rh/cc-slackhook-plugin).
 
 Language: English | [日本語](docs/ja/README.md)
 
