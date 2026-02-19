@@ -30,7 +30,7 @@ if [ -f "$CONFIG_PATH" ]; then
 fi
 
 escaped_notify_path=$(printf "%s" "$NOTIFY_SCRIPT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-notify_line="notify = \"${escaped_notify_path}\""
+notify_line="notify = [\"${escaped_notify_path}\"]"
 
 tmp_file=$(mktemp "${CONFIG_PATH}.tmp.XXXXXX")
 input_file="$CONFIG_PATH"

@@ -1,0 +1,10 @@
+{
+  "type": "agent-turn-complete",
+  "thread-id": "sess-current",
+  "turn-id": "turn-current-1",
+  "cwd": "__CWD__",
+  "input-messages": [
+    "Current payload prompt"
+  ],
+  "last-assistant-message": "Current payload answer"
+}

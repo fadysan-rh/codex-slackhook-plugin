@@ -5,7 +5,7 @@
 [![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](notify/)
 
 > Real-time Slack notifications for Codex CLI turns via `notify`.
-> Request and answer messages are grouped into one Slack thread per session.
+> Prompt and response messages are grouped into one Slack thread per session.
 
 Also available for Claude Code: [`cc-slackhook-plugin`](https://github.com/fadysan-rh/cc-slackhook-plugin)
 
@@ -15,7 +15,7 @@ Language: English | [日本語](docs/ja/README.md)
 
 ## Overview
 
-When Codex emits `agent-turn-complete`, this plugin posts to Slack:
+When Codex emits a turn-complete notification (`agent-turn-complete` or `after_agent`), this plugin posts to Slack:
 
 ```
 You: "Implement authentication"
@@ -24,10 +24,10 @@ Slack:
        *Codex Session Started*
        *repo/dir:* org:repo/main
 
-       *Request:*
+       *Prompt:*
        Implement authentication
 
-       *Answer:*
+       *Response:*
        Added JWT middleware and tests
 ```
 
@@ -35,11 +35,11 @@ Slack:
 
 | Feature | Condition | What it does |
 |---------|-----------|--------------|
-| **Threaded turn notifications** | Every `agent-turn-complete` event | First turn starts a thread, later turns reply in the same thread. |
-| **Dual token posting** | `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN` are both set | Request is posted as user token, answer is posted as bot token. |
-| **Single token fallback** | Only one token is set | Request/answer are combined into one post with the available token. |
+| **Threaded turn notifications** | Every supported turn-complete event (`agent-turn-complete`, `after_agent`) | First turn starts a thread, later turns reply in the same thread. |
+| **Dual token posting** | `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN` are both set | Each turn is split in-thread: `Prompt` is posted with the user token, `Response` is posted with the bot token. |
+| **Single token fallback** | Only one token is set | Prompt/response are combined into one post with the available token. |
 | **Slack-safe formatting** | All posts | Escapes Slack `mrkdwn` special characters (`<`, `>`, `&`). |
-| **Flexible payload parsing** | Hyphenated and underscored keys | Supports both formats for event/session/turn/input/output fields. |
+| **Flexible payload parsing** | Hyphenated and underscored keys | Supports legacy and current Codex notify payloads (`agent-turn-complete` and `after_agent`), including `last-assistant-message`. |
 
 ### Smart Threading
 
@@ -97,7 +97,7 @@ alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
 Add to `~/.codex/config.toml`:
 
 ```toml
-notify = "/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"
+notify = ["/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"]
 ```
 
 Windows example:
@@ -111,18 +111,18 @@ notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhoo
 Set environment variables in your shell profile (or launch environment):
 
 ```bash
-export CODEX_SLACK_USER_TOKEN="xoxp-..."   # optional: request token
-export CODEX_SLACK_BOT_TOKEN="xoxb-..."    # optional: answer token
-export CODEX_SLACK_CHANNEL="C0XXXXXXX"
+export CODEX_SLACK_USER_TOKEN="xoxp-..."   # optional: prompt token
+export CODEX_SLACK_BOT_TOKEN="xoxb-..."    # optional: response token
+export CODEX_SLACK_CHANNEL_ID="C0XXXXXXX"
 export CODEX_SLACK_LOCALE="en"             # en / ja (default: en)
 export CODEX_SLACK_THREAD_TIMEOUT="1800"   # optional, seconds
 ```
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `CODEX_SLACK_CHANNEL` | Yes | Target Slack channel ID |
-| `CODEX_SLACK_USER_TOKEN` | Conditionally | Token for request posting in dual-token mode |
-| `CODEX_SLACK_BOT_TOKEN` | Conditionally | Token for answer posting in dual-token mode |
+| `CODEX_SLACK_CHANNEL_ID` | Yes | Target Slack channel ID |
+| `CODEX_SLACK_USER_TOKEN` | Conditionally | Token for prompt posting in dual-token mode |
+| `CODEX_SLACK_BOT_TOKEN` | Conditionally | Token for response posting in dual-token mode |
 | `CODEX_SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
 | `CODEX_SLACK_LOCALE` | No | Message locale: `en` or `ja` (default: `en`) |
 | `CODEX_SLACK_NOTIFY_DEBUG` | No | Set `1` to enable debug logs (default: `0`) |
@@ -130,9 +130,10 @@ export CODEX_SLACK_THREAD_TIMEOUT="1800"   # optional, seconds
 
 Token rules:
 
-- Both `CODEX_SLACK_USER_TOKEN` and `CODEX_SLACK_BOT_TOKEN`: split posting (request=user, answer=bot)
+- Both `CODEX_SLACK_USER_TOKEN` and `CODEX_SLACK_BOT_TOKEN`: each turn is split (prompt=user, response=bot)
 - Only one token: combined single post with that token
 - No token: no post
+
 
 ## Slack App Setup
 

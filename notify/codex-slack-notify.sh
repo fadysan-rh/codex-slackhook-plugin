@@ -37,14 +37,26 @@ i18n_text() {
     ja:start_label) echo "Codex Session Started" ;;
     en:start_label) echo "Codex Session Started" ;;
     ja:request_label) echo "リクエスト" ;;
-    en:request_label) echo "Request" ;;
+    en:request_label) echo "Prompt" ;;
     ja:answer_label) echo "回答" ;;
-    en:answer_label) echo "Answer" ;;
+    en:answer_label) echo "Response" ;;
     ja:repo_dir_label) echo "repo/dir" ;;
     en:repo_dir_label) echo "repo/dir" ;;
     ja:no_details) echo "(詳細なし)" ;;
     en:no_details) echo "(No details)" ;;
     *) echo "$key" ;;
+  esac
+}
+
+is_target_event() {
+  local event="$1"
+  case "$event" in
+    ""|null|agent-turn-complete|agent_turn_complete|after_agent|after-agent|turn-complete|turn_complete)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
   esac
 }
 
@@ -155,10 +167,28 @@ extract_last_user_text() {
       else ""
       end;
 
-    ((.["input-messages"] // .input_messages // [])
-      | map(select((.role // "") == "user") | (.content | textify))
-      | map(select(length > 0))
-      | last) // ""
+    (
+      ((.["input-messages"] // .input_messages // .hook_event["input-messages"] // .hook_event.input_messages // [])
+        | if type == "array" then . else [] end
+        | (
+            (map(select(type == "object" and ((.role // "") == "user")) | (.content | textify))
+              | map(select(length > 0))
+              | last) // ""
+          ) as $from_role
+        | if ($from_role | length) > 0 then
+            $from_role
+          else
+            ((map(textify) | map(select(length > 0)) | last) // "")
+          end
+      ) // ""
+    ) as $from_messages
+    | if ($from_messages | length) > 0 then
+        $from_messages
+      else
+        ((.["last-user-message"] // .last_user_message // .lastUserMessage
+          // .hook_event["last-user-message"] // .hook_event.last_user_message // .hook_event.lastUserMessage
+          // .user_message // .message // "") | textify)
+      end
   ' 2>/dev/null || true
 }
 
@@ -174,10 +204,28 @@ extract_last_assistant_text() {
       else ""
       end;
 
-    ((.["output-messages"] // .output_messages // [])
-      | map(select((.role // "") == "assistant") | (.content | textify))
-      | map(select(length > 0))
-      | last) // ""
+    (
+      ((.["output-messages"] // .output_messages // .hook_event["output-messages"] // .hook_event.output_messages // [])
+        | if type == "array" then . else [] end
+        | (
+            (map(select(type == "object" and ((.role // "") == "assistant")) | (.content | textify))
+              | map(select(length > 0))
+              | last) // ""
+          ) as $from_role
+        | if ($from_role | length) > 0 then
+            $from_role
+          else
+            ((map(textify) | map(select(length > 0)) | last) // "")
+          end
+      ) // ""
+    ) as $from_messages
+    | if ($from_messages | length) > 0 then
+        $from_messages
+      else
+        ((.["last-assistant-message"] // .last_assistant_message // .lastAssistantMessage
+          // .hook_event["last-assistant-message"] // .hook_event.last_assistant_message // .hook_event.lastAssistantMessage
+          // .last_agent_message // "") | textify)
+      end
   ' 2>/dev/null || true
 }
 
@@ -286,7 +334,7 @@ main() {
   if [ -n "$user_token" ] && [ -n "$bot_token" ]; then
     dual_token_mode="true"
   fi
-  channel="${CODEX_SLACK_CHANNEL:-}"
+  channel="${CODEX_SLACK_CHANNEL_ID:-}"
 
   if ! command -v jq >/dev/null 2>&1; then
     exit 0
@@ -303,8 +351,8 @@ main() {
   fi
 
   local event
-  event=$(printf "%s" "$payload" | jq -r '.event // .event_name // .type // ""')
-  if [ -n "$event" ] && [ "$event" != "agent-turn-complete" ]; then
+  event=$(printf "%s" "$payload" | jq -r '.event // .event_name // .type // .hook_name // .["hook-name"] // .hook_event.event_type // .hook_event["event-type"] // .hook_event.type // ""')
+  if ! is_target_event "$event"; then
     debug "EXIT: skip event=$event"
     exit 0
   fi
@@ -319,9 +367,9 @@ main() {
   local answer_text
   local project_info
 
-  cwd=$(printf "%s" "$payload" | jq -r '.cwd // .workdir // ""')
-  session_raw=$(printf "%s" "$payload" | jq -r '.session_id // .sessionId // .["session-id"] // ""')
-  turn_id=$(printf "%s" "$payload" | jq -r '.turn_id // .turnId // .["turn-id"] // ""')
+  cwd=$(printf "%s" "$payload" | jq -r '.cwd // .workdir // .current_dir // .["current-dir"] // .hook_event.cwd // .hook_event.workdir // ""')
+  session_raw=$(printf "%s" "$payload" | jq -r '.session_id // .sessionId // .["session-id"] // .thread_id // .threadId // .["thread-id"] // .hook_event.thread_id // .hook_event.threadId // .hook_event["thread-id"] // ""')
+  turn_id=$(printf "%s" "$payload" | jq -r '.turn_id // .turnId // .["turn-id"] // .hook_event.turn_id // .hook_event.turnId // .hook_event["turn-id"] // ""')
 
   request_raw=$(extract_last_user_text "$payload")
   answer_raw=$(extract_last_assistant_text "$payload")
@@ -455,76 +503,54 @@ main() {
       fi
     fi
   else
-    local request_message=""
-    local answer_message=""
-    local posted_any="false"
-
-    if [ -n "$request_text" ]; then
-      if [ -n "$thread_ts" ]; then
-        request_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
-      else
-        request_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
-      fi
-    fi
-
-    if [ -n "$answer_text" ]; then
-      if [ -n "$thread_ts" ] || [ -n "$request_text" ]; then
-        answer_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
-      else
-        answer_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$answer_label" "$answer_text")
-      fi
-    fi
-
-    if [ -n "$answer_message" ]; then
-      answer_message=$(append_turn_suffix "$answer_message" "$turn_id")
-      answer_message="${answer_message:0:3000}"
-    elif [ -n "$request_message" ]; then
-      request_message=$(append_turn_suffix "$request_message" "$turn_id")
-      request_message="${request_message:0:3000}"
-    fi
+    local starter_message=""
+    local bot_message=""
 
     if [ -n "$thread_ts" ]; then
-      if [ -n "$request_message" ]; then
+      local request_message=""
+      local posted_any="false"
+
+      if [ -n "$request_text" ]; then
+        request_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
+        request_message="${request_message:0:3000}"
         if ! post_to_slack "$user_token" "$channel" "$request_message" "$thread_ts" >/dev/null; then
           exit 0
         fi
         posted_any="true"
       fi
-      if [ -n "$answer_message" ]; then
-        if ! post_to_slack "$bot_token" "$channel" "$answer_message" "$thread_ts" >/dev/null; then
+
+      if [ -n "$answer_text" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      elif [ "$posted_any" = "false" ] && [ -n "$request_text" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
+      elif [ "$posted_any" = "false" ]; then
+        bot_message="$no_details"
+      fi
+
+      if [ -n "$bot_message" ]; then
+        bot_message=$(append_turn_suffix "$bot_message" "$turn_id")
+        bot_message="${bot_message:0:3000}"
+
+        if ! post_to_slack "$bot_token" "$channel" "$bot_message" "$thread_ts" >/dev/null; then
           exit 0
         fi
         posted_any="true"
       fi
+
       if [ "$posted_any" = "true" ]; then
         if ! write_state_file_atomic "$thread_file" "$thread_ts"; then
           debug "WARN: failed refresh thread file"
         fi
       fi
     else
-      local first_message=""
-      local first_token=""
-      local second_message=""
-      local second_token=""
-
-      if [ -n "$request_message" ]; then
-        first_message="$request_message"
-        first_token="$user_token"
-        if [ -n "$answer_message" ]; then
-          second_message="$answer_message"
-          second_token="$bot_token"
-        fi
-      elif [ -n "$answer_message" ]; then
-        first_message="$answer_message"
-        first_token="$bot_token"
+      if [ -n "$request_text" ]; then
+        starter_message=$(printf "*%s*\n*%s:* %s\n\n*%s:*\n%s" "$start_label" "$repo_dir_label" "$project_info" "$request_label" "$request_text")
+      else
+        starter_message=$(printf "*%s*\n*%s:* %s\n\n%s" "$start_label" "$repo_dir_label" "$project_info" "$no_details")
       fi
+      starter_message="${starter_message:0:3000}"
 
-      if [ -z "$first_message" ]; then
-        first_message=$(append_turn_suffix "$no_details" "$turn_id")
-        first_token="$bot_token"
-      fi
-
-      if ! response=$(post_to_slack "$first_token" "$channel" "$first_message"); then
+      if ! response=$(post_to_slack "$user_token" "$channel" "$starter_message"); then
         exit 0
       fi
 
@@ -538,10 +564,18 @@ main() {
         debug "WARN: failed save thread file"
       fi
 
-      if [ -n "$second_message" ]; then
-        if ! post_to_slack "$second_token" "$channel" "$second_message" "$new_ts_dual" >/dev/null; then
-          exit 0
-        fi
+      if [ -n "$answer_text" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$answer_label" "$answer_text")
+      elif [ -n "$request_text" ]; then
+        bot_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
+      else
+        bot_message="$no_details"
+      fi
+      bot_message=$(append_turn_suffix "$bot_message" "$turn_id")
+      bot_message="${bot_message:0:3000}"
+
+      if ! post_to_slack "$bot_token" "$channel" "$bot_message" "$new_ts_dual" >/dev/null; then
+        exit 0
       fi
     fi
   fi

@@ -146,7 +146,7 @@ run_notify() {
   MOCK_CURL_TS="$mock_ts" \
   CODEX_SLACK_USER_TOKEN="" \
   CODEX_SLACK_BOT_TOKEN="xoxb-test" \
-  CODEX_SLACK_CHANNEL="C_TEST" \
+  CODEX_SLACK_CHANNEL_ID="C_TEST" \
     bash "$NOTIFY_SCRIPT" "$payload" >/dev/null 2>&1 || status=$?
 
   echo "$status"
@@ -170,7 +170,7 @@ run_notify_with_tokens() {
   MOCK_CURL_TS="$mock_ts" \
   CODEX_SLACK_USER_TOKEN="$user_token" \
   CODEX_SLACK_BOT_TOKEN="$bot_token" \
-  CODEX_SLACK_CHANNEL="C_TEST" \
+  CODEX_SLACK_CHANNEL_ID="C_TEST" \
     bash "$NOTIFY_SCRIPT" "$payload" >/dev/null 2>&1 || status=$?
 
   echo "$status"
@@ -219,8 +219,8 @@ test_first_turn_starts_thread() {
 
   assert_zero "first_turn_exit" "$status"
   assert_contains "first_turn_has_start" "$text" "*Codex Session Started*"
-  assert_contains "first_turn_has_request" "$text" "*Request:*"
-  assert_contains "first_turn_has_answer" "$text" "*Answer:*"
+  assert_contains "first_turn_has_request" "$text" "*Prompt:*"
+  assert_contains "first_turn_has_answer" "$text" "*Response:*"
   assert_contains "first_turn_escape_channel" "$text" "&lt;!channel&gt;"
   assert_not_contains "first_turn_no_raw_channel" "$text" "<!channel>"
   assert_contains "first_turn_escape_angle" "$text" "&lt;ok&gt;"
@@ -284,6 +284,60 @@ test_underscored_keys_are_supported() {
   assert_contains "underscored_keys_text" "$text" "Please summarize changes"
   assert_contains "underscored_keys_answer" "$text" "Summary ready"
   assert_file_exists "underscored_keys_thread_created" "${test_home}/.codex/.slack-thread-sess_underscore"
+
+  rm -rf "$tmp_dir"
+}
+
+test_after_agent_payload_is_supported() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-after-agent.json"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload
+  payload=$(render_fixture "${FIXTURES_DIR}/notify-after-agent.json" "${tmp_dir}/repo")
+
+  local status
+  status=$(run_notify "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000777")
+
+  local text
+  text=$(jq -r '.text // ""' "$capture_file")
+
+  assert_zero "after_agent_exit" "$status"
+  assert_contains "after_agent_request_text" "$text" "Ship notify fix"
+  assert_contains "after_agent_answer_text" "$text" "Patched and verified"
+  assert_file_exists "after_agent_thread_created" "${test_home}/.codex/.slack-thread-thread-after-agent"
+
+  rm -rf "$tmp_dir"
+}
+
+test_current_notify_payload_is_supported() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-current.json"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload
+  payload=$(render_fixture "${FIXTURES_DIR}/notify-current.json" "${tmp_dir}/repo")
+
+  local status
+  status=$(run_notify "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000555")
+
+  local text
+  text=$(jq -r '.text // ""' "$capture_file")
+
+  assert_zero "current_payload_exit" "$status"
+  assert_contains "current_payload_request_text" "$text" "Current payload prompt"
+  assert_contains "current_payload_answer_text" "$text" "Current payload answer"
+  assert_file_exists "current_payload_thread_created" "${test_home}/.codex/.slack-thread-sess-current"
 
   rm -rf "$tmp_dir"
 }
@@ -362,6 +416,60 @@ test_dual_tokens_split_posts() {
   rm -rf "$tmp_dir"
 }
 
+test_dual_tokens_followup_turn_includes_request_and_answer() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-dual-followup.json"
+  local trace_file="${tmp_dir}/trace-dual-followup.log"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload
+  payload=$(render_fixture "${FIXTURES_DIR}/notify-hyphenated.json" "${tmp_dir}/repo")
+
+  local status1
+  local status2
+  status1=$(run_notify_with_tokens "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000001" "xoxp-user" "xoxb-bot" "$trace_file")
+  status2=$(run_notify_with_tokens "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000002" "xoxp-user" "xoxb-bot" "$trace_file")
+
+  local line_count
+  line_count=$(wc -l < "$trace_file" | tr -d ' ')
+
+  local third_token
+  local fourth_token
+  third_token=$(awk 'NR==3 {print $1}' "$trace_file")
+  fourth_token=$(awk 'NR==4 {print $1}' "$trace_file")
+  local third_payload
+  local fourth_payload
+  third_payload=$(awk -F '\t' 'NR==3 {print $2}' "$trace_file")
+  fourth_payload=$(awk -F '\t' 'NR==4 {print $2}' "$trace_file")
+  local third_thread_ts
+  local fourth_thread_ts
+  third_thread_ts=$(printf "%s" "$third_payload" | jq -r '.thread_ts // ""')
+  fourth_thread_ts=$(printf "%s" "$fourth_payload" | jq -r '.thread_ts // ""')
+  local third_text
+  local fourth_text
+  third_text=$(printf "%s" "$third_payload" | jq -r '.text // ""')
+  fourth_text=$(printf "%s" "$fourth_payload" | jq -r '.text // ""')
+
+  assert_zero "dual_tokens_followup_first_call_exit" "$status1"
+  assert_zero "dual_tokens_followup_second_call_exit" "$status2"
+  assert_equals "dual_tokens_followup_total_posts" "$line_count" "4"
+  assert_equals "dual_tokens_followup_third_user_token" "$third_token" "xoxp-user"
+  assert_equals "dual_tokens_followup_fourth_bot_token" "$fourth_token" "xoxb-bot"
+  assert_equals "dual_tokens_followup_third_thread_ts" "$third_thread_ts" "1710000000.000001"
+  assert_equals "dual_tokens_followup_fourth_thread_ts" "$fourth_thread_ts" "1710000000.000001"
+  assert_contains "dual_tokens_followup_third_has_request" "$third_text" "*Prompt:*"
+  assert_not_contains "dual_tokens_followup_third_no_answer" "$third_text" "*Response:*"
+  assert_contains "dual_tokens_followup_fourth_has_answer" "$fourth_text" "*Response:*"
+  assert_not_contains "dual_tokens_followup_fourth_no_request" "$fourth_text" "*Prompt:*"
+
+  rm -rf "$tmp_dir"
+}
+
 test_setup_script_is_idempotent() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -400,7 +508,7 @@ EOF
   local escaped_notify_path
   escaped_notify_path=$(printf "%s" "${ROOT_DIR}/notify/codex-slack-notify.sh" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
   local expected_notify_line
-  expected_notify_line="notify = \"${escaped_notify_path}\""
+  expected_notify_line="notify = [\"${escaped_notify_path}\"]"
   local actual_notify_line
   actual_notify_line=$(printf "%s\n" "$notify_lines" | sed -E 's/^[0-9]+:[[:space:]]*//' | head -n 1)
 
@@ -437,8 +545,11 @@ main() {
   test_first_turn_starts_thread
   test_second_turn_reuses_thread
   test_underscored_keys_are_supported
+  test_after_agent_payload_is_supported
+  test_current_notify_payload_is_supported
   test_symlink_thread_file_not_followed
   test_dual_tokens_split_posts
+  test_dual_tokens_followup_turn_includes_request_and_answer
 
   echo "----"
   echo "Passed: ${PASS_COUNT}"

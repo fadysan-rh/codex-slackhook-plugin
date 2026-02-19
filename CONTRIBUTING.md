@@ -24,7 +24,7 @@ When implementation, testing, or release process changes, update this file.
 
 | Path | Purpose |
 |------|---------|
-| `notify/codex-slack-notify.sh` | Main notify script for `agent-turn-complete` payloads |
+| `notify/codex-slack-notify.sh` | Main notify script for turn-complete payloads (`agent-turn-complete` / `after_agent`) |
 | `setup.sh` | Installs/updates `notify` in Codex config on macOS/Linux |
 | `setup.ps1` | Installs/updates `notify` in Codex config on Windows |
 | `codex-with-slack.sh` | Wrapper that runs `codex -c "notify=\\"...\\""` |
@@ -38,7 +38,7 @@ When implementation, testing, or release process changes, update this file.
 2. Run installer if you want to test with real Codex CLI:
    - macOS/Linux: `./setup.sh`
    - Windows: `./setup.ps1`
-3. Set environment variables (`CODEX_SLACK_CHANNEL`, tokens, locale, timeout) as needed.
+3. Set environment variables (`CODEX_SLACK_CHANNEL_ID`, tokens, locale, timeout) as needed.
 
 For isolated local checks, prefer a temporary `CODEX_HOME`:
 
@@ -56,7 +56,7 @@ tests/run-tests.sh
 
 The test suite validates:
 
-- event filtering (`agent-turn-complete` only)
+- event filtering for supported turn-complete events (`agent-turn-complete`, `after_agent`)
 - first-turn thread creation and second-turn thread reuse
 - payload compatibility (hyphenated and underscored keys)
 - mrkdwn escaping (`<`, `>`, `&`)

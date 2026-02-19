@@ -1,0 +1,20 @@
+{
+  "event": "after_agent",
+  "thread-id": "thread-after-agent",
+  "turn-id": "turn-after-agent",
+  "current-dir": "__CWD__",
+  "input-messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "Ship notify fix" }
+      ]
+    }
+  ],
+  "last-assistant-message": {
+    "role": "assistant",
+    "content": [
+      { "type": "output_text", "text": "Patched and verified" }
+    ]
+  }
+}

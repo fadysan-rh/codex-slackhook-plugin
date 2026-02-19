@@ -15,7 +15,7 @@ Claude Code 向けプラグイン: [`cc-slackhook-plugin`](https://github.com/fa
 
 ## Overview
 
-Codex の `agent-turn-complete` イベントを受けて Slack に投稿します。
+Codex のターン完了通知（`agent-turn-complete` / `after_agent`）を受けて Slack に投稿します。
 
 ```text
 You: "Implement authentication"
@@ -24,10 +24,10 @@ Slack:
        *Codex Session Started*
        *repo/dir:* org:repo/main
 
-       *Request:*
+       *Prompt:*
        Implement authentication
 
-       *Answer:*
+       *Response:*
        Added JWT middleware and tests
 ```
 
@@ -35,11 +35,11 @@ Slack:
 
 | 機能 | 条件 | 動作 |
 |------|------|------|
-| **スレッド通知** | `agent-turn-complete` ごと | 初回ターンは新規スレッド、2回目以降は同一スレッドへ返信します。 |
-| **デュアルトークン投稿** | `CODEX_SLACK_USER_TOKEN` と `CODEX_SLACK_BOT_TOKEN` が両方設定済み | リクエストは user token、回答は bot token で投稿します。 |
+| **スレッド通知** | 対応するターン完了イベント（`agent-turn-complete` / `after_agent`）ごと | 初回ターンは新規スレッド、2回目以降は同一スレッドへ返信します。 |
+| **デュアルトークン投稿** | `CODEX_SLACK_USER_TOKEN` と `CODEX_SLACK_BOT_TOKEN` が両方設定済み | 各ターンをスレッド内で分離し、`Prompt` は user token、`Response` は bot token で投稿します。 |
 | **単一トークンフォールバック** | どちらか一方のトークンのみ設定 | リクエスト/回答を1投稿にまとめて送信します。 |
 | **Slack向けエスケープ** | 全投稿共通 | Slack `mrkdwn` 特殊文字（`<`, `>`, `&`）をエスケープします。 |
-| **柔軟なペイロード解析** | ハイフン形式/アンダースコア形式 | event/session/turn/input/output の両キー形式を受け付けます。 |
+| **柔軟なペイロード解析** | ハイフン形式/アンダースコア形式 | 旧/現行の Codex notify ペイロード（`agent-turn-complete` / `after_agent`）に対応し、`last-assistant-message` も解析します。 |
 
 ### Smart Threading
 
@@ -97,7 +97,7 @@ alias codexs='/path/to/codex-slackhook-plugin/codex-with-slack.sh'
 `~/.codex/config.toml` に追加:
 
 ```toml
-notify = "/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"
+notify = ["/absolute/path/to/codex-slackhook-plugin/notify/codex-slack-notify.sh"]
 ```
 
 Windows 例:
@@ -113,14 +113,14 @@ notify = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\path\\to\\codex-slackhoo
 ```bash
 export CODEX_SLACK_USER_TOKEN="xoxp-..."   # 任意: リクエスト投稿用
 export CODEX_SLACK_BOT_TOKEN="xoxb-..."    # 任意: 回答投稿用
-export CODEX_SLACK_CHANNEL="C0XXXXXXX"
+export CODEX_SLACK_CHANNEL_ID="C0XXXXXXX"
 export CODEX_SLACK_LOCALE="ja"             # en / ja（既定: en）
 export CODEX_SLACK_THREAD_TIMEOUT="1800"   # 任意、秒
 ```
 
 | 変数 | 必須 | 説明 |
 |------|:----:|------|
-| `CODEX_SLACK_CHANNEL` | Yes | 投稿先 Slack チャンネル ID |
+| `CODEX_SLACK_CHANNEL_ID` | Yes | 投稿先 Slack チャンネル ID |
 | `CODEX_SLACK_USER_TOKEN` | 条件付き | デュアルトークン時のリクエスト投稿用トークン |
 | `CODEX_SLACK_BOT_TOKEN` | 条件付き | デュアルトークン時の回答投稿用トークン |
 | `CODEX_SLACK_THREAD_TIMEOUT` | No | 新規スレッド開始までの秒数（既定: `1800`） |
@@ -130,9 +130,10 @@ export CODEX_SLACK_THREAD_TIMEOUT="1800"   # 任意、秒
 
 トークン挙動:
 
-- `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN`: 投稿分離（Request は user / Answer は bot）
+- `CODEX_SLACK_USER_TOKEN` + `CODEX_SLACK_BOT_TOKEN`: 各ターンを投稿分離（prompt は user / response は bot）
 - どちらか一方のみ: そのトークンで 1 投稿
 - どちらも未設定: 投稿しない
+
 
 ## Slack App Setup
 
