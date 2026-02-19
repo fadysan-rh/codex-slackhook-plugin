@@ -154,6 +154,41 @@ export CODEX_SLACK_CHANGES_MAX_FILES="15"  # 任意、Changes に出す最大件
 - 未設定の場合のみ `CODEX_SLACK_CHANNEL` を使用
 - どちらも未設定なら投稿しない
 
+投稿に必要な最小設定:
+
+- チャンネル: `CODEX_SLACK_CHANNEL_ID` または `CODEX_SLACK_CHANNEL` のどちらかを設定
+- トークン: `CODEX_SLACK_BOT_TOKEN` または `CODEX_SLACK_USER_TOKEN` の少なくとも一方を設定
+
+## Quick Check
+
+インストールと環境変数設定後、同梱 fixture で 1 回テスト通知できます。
+
+```bash
+payload=$(jq --arg cwd "$(pwd)" '.cwd = $cwd' tests/fixtures/notify-current.json)
+bash notify/codex-slack-notify.sh "$payload"
+```
+
+期待結果:
+
+- 設定した Slack チャンネルに 1 件投稿される
+- 投稿に `Codex Session Started`、`Prompt`、`Response`、`turn` フッターが含まれる
+
+投稿スキップ理由を確認する場合:
+
+```bash
+CODEX_SLACK_NOTIFY_DEBUG=1 \
+CODEX_SLACK_NOTIFY_DEBUG_LOG=/tmp/codex-slack-debug.log \
+bash notify/codex-slack-notify.sh "$payload"
+tail -n 50 /tmp/codex-slack-debug.log
+```
+
+## Troubleshooting
+
+- 投稿されない: チャンネル/トークン環境変数が設定済みか、`jq` が入っているかを確認
+- 毎ターン投稿されない: 対応イベントはターン完了系のみ（`agent-turn-complete`, `agent_turn_complete`, `after_agent`, `after-agent`, `turn-complete`, `turn_complete`）
+- 途中で新しいスレッドになる: タイムアウト超過（`CODEX_SLACK_THREAD_TIMEOUT`）か作業ディレクトリ変更で state が切り替わるため
+- `Changes` が出ない: 作業ディレクトリが Git リポジトリで、ローカル変更が必要
+- Windows で setup が失敗する: Git for Windows を入れ、`bash.exe` が見つかる状態にする
 
 ## Slack App Setup
 

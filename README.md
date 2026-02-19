@@ -165,6 +165,41 @@ Channel rules:
 - Otherwise `CODEX_SLACK_CHANNEL` is used
 - If neither is set: no post
 
+Minimum required settings to post:
+
+- Channel: set either `CODEX_SLACK_CHANNEL_ID` or `CODEX_SLACK_CHANNEL`
+- Token: set at least one of `CODEX_SLACK_BOT_TOKEN` or `CODEX_SLACK_USER_TOKEN`
+
+## Quick Check
+
+After install and environment-variable setup, you can send one test notification using a bundled fixture:
+
+```bash
+payload=$(jq --arg cwd "$(pwd)" '.cwd = $cwd' tests/fixtures/notify-current.json)
+bash notify/codex-slack-notify.sh "$payload"
+```
+
+Expected result:
+
+- One Slack message appears in your configured channel
+- The message includes `Codex Session Started`, `Prompt`, `Response`, and a `turn` footer
+
+To inspect why a post was skipped:
+
+```bash
+CODEX_SLACK_NOTIFY_DEBUG=1 \
+CODEX_SLACK_NOTIFY_DEBUG_LOG=/tmp/codex-slack-debug.log \
+bash notify/codex-slack-notify.sh "$payload"
+tail -n 50 /tmp/codex-slack-debug.log
+```
+
+## Troubleshooting
+
+- No message appears: confirm channel and token environment variables are set, and `jq` is installed.
+- Message appears but not on each turn: only turn-complete events are handled (`agent-turn-complete`, `agent_turn_complete`, `after_agent`, `after-agent`, `turn-complete`, `turn_complete`).
+- New thread appears unexpectedly: thread state resets when timeout expires (`CODEX_SLACK_THREAD_TIMEOUT`) or when working directory changes.
+- `Changes` block is missing: the working directory must be a Git repository with local file changes.
+- Windows setup fails: ensure Git for Windows is installed and `bash.exe` is discoverable.
 
 ## Slack App Setup
 
