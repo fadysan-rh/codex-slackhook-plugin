@@ -44,6 +44,8 @@ i18n_text() {
     en:repo_dir_label) echo "repo/dir" ;;
     ja:no_details) echo "(詳細なし)" ;;
     en:no_details) echo "(No details)" ;;
+    ja:changes_label) echo "変更ファイル" ;;
+    en:changes_label) echo "Changes" ;;
     *) echo "$key" ;;
   esac
 }
@@ -265,6 +267,96 @@ build_project_info() {
   fi
 }
 
+build_changed_files_info() {
+  local cwd="$1"
+  local max_files="${2:-15}"
+
+  [ -z "$cwd" ] || [ ! -d "$cwd" ] && return 0
+  git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+  local has_head="true"
+  git -C "$cwd" rev-parse HEAD >/dev/null 2>&1 || has_head="false"
+
+  local output=""
+  local count=0
+  local total=0
+
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    total=$((total + 1))
+    [ "$count" -ge "$max_files" ] && continue
+    count=$((count + 1))
+
+    local xy="${line:0:2}"
+    local file="${line:3}"
+    file=$(printf "%s" "$file" | sed 's/^"//;s/"$//')
+
+    local st
+    local x="${xy:0:1}"
+    local y="${xy:1:1}"
+    if [ "$x" = "?" ]; then
+      st="??"
+    elif [ "$x" != " " ]; then
+      st="$x"
+    elif [ "$y" != " " ]; then
+      st="$y"
+    else
+      st="M"
+    fi
+
+    local diff_path="$file"
+    if [[ "$file" == *" -> "* ]]; then
+      diff_path="${file##* -> }"
+    fi
+
+    local added="" deleted=""
+    if [ "$st" = "??" ]; then
+      if [ -f "${cwd}/${file}" ]; then
+        added=$(wc -l < "${cwd}/${file}" 2>/dev/null | tr -d ' ')
+      fi
+      [ -z "$added" ] && added="0"
+      deleted="0"
+    elif [ "$has_head" = "true" ]; then
+      local numline
+      numline=$(git -C "$cwd" diff HEAD --numstat -- "$diff_path" 2>/dev/null | head -1)
+      if [ -n "$numline" ]; then
+        added=$(printf "%s" "$numline" | awk '{print $1}')
+        deleted=$(printf "%s" "$numline" | awk '{print $2}')
+      fi
+    else
+      local numline
+      numline=$(git -C "$cwd" diff --cached --numstat -- "$diff_path" 2>/dev/null | head -1)
+      if [ -n "$numline" ]; then
+        added=$(printf "%s" "$numline" | awk '{print $1}')
+        deleted=$(printf "%s" "$numline" | awk '{print $2}')
+      fi
+    fi
+
+    local entry="${st} ${file}"
+    if [ -n "$added" ] && [ -n "$deleted" ]; then
+      if [ "$added" = "-" ] || [ "$deleted" = "-" ]; then
+        entry="${entry} (binary)"
+      else
+        entry="${entry} (+${added} -${deleted})"
+      fi
+    fi
+
+    if [ -n "$output" ]; then
+      output="${output}"$'\n'
+    fi
+    output="${output}${entry}"
+  done < <(git -C "$cwd" status --porcelain 2>/dev/null)
+
+  [ "$total" -eq 0 ] && return 0
+
+  local remaining=$((total - count))
+  if [ "$remaining" -gt 0 ]; then
+    output="${output}"$'\n'"…+${remaining} files"
+  fi
+
+  printf "%s" "$output"
+}
+
 post_to_slack() {
   local token="$1"
   local channel="$2"
@@ -466,6 +558,21 @@ main() {
   repo_dir_label=$(i18n_text "$locale" "repo_dir_label")
   no_details=$(i18n_text "$locale" "no_details")
 
+  local changes_label
+  local changes_raw
+  local changes_block=""
+  changes_label=$(i18n_text "$locale" "changes_label")
+  changes_raw=$(build_changed_files_info "$cwd" "${CODEX_SLACK_CHANGES_MAX_FILES:-15}")
+  if [ -n "$changes_raw" ]; then
+    local changes_escaped
+    changes_escaped=$(escape_mrkdwn "$changes_raw")
+    changes_block=$(printf "*%s:*" "$changes_label")
+    while IFS= read -r _cline; do
+      [ -z "$_cline" ] && continue
+      changes_block="${changes_block}"$'\n'"\`${_cline}\`"
+    done <<< "$changes_escaped"
+  fi
+
   local response
   if [ "$dual_token_mode" = "false" ]; then
     local text
@@ -491,6 +598,9 @@ main() {
       fi
     fi
 
+    if [ -n "$changes_block" ]; then
+      text="${text}"$'\n\n'"${changes_block}"
+    fi
     text=$(append_turn_suffix "$text" "$turn_id")
     text="${text:0:3000}"
 
@@ -539,6 +649,9 @@ main() {
       fi
 
       if [ -n "$bot_message" ]; then
+        if [ -n "$changes_block" ]; then
+          bot_message="${bot_message}"$'\n\n'"${changes_block}"
+        fi
         bot_message=$(append_turn_suffix "$bot_message" "$turn_id")
         bot_message="${bot_message:0:3000}"
 
@@ -581,6 +694,9 @@ main() {
         bot_message=$(printf "*%s:*\n%s" "$request_label" "$request_text")
       else
         bot_message="$no_details"
+      fi
+      if [ -n "$changes_block" ]; then
+        bot_message="${bot_message}"$'\n\n'"${changes_block}"
       fi
       bot_message=$(append_turn_suffix "$bot_message" "$turn_id")
       bot_message="${bot_message:0:3000}"

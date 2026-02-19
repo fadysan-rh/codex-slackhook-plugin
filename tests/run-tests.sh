@@ -496,6 +496,96 @@ test_dual_tokens_split_posts() {
   rm -rf "$tmp_dir"
 }
 
+test_changed_files_included_in_notification() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-changes.json"
+  local repo_dir="${tmp_dir}/repo"
+  mkdir -p "${test_home}/.codex"
+  write_mock_curl "$mock_bin"
+
+  # Set up a git repo with an initial commit
+  git init "$repo_dir" >/dev/null 2>&1
+  git -C "$repo_dir" -c user.name="test" -c user.email="test@test" commit --allow-empty -m "init" >/dev/null 2>&1
+  printf "line1\nline2\nline3\n" > "${repo_dir}/existing.txt"
+  git -C "$repo_dir" add existing.txt >/dev/null 2>&1
+  git -C "$repo_dir" -c user.name="test" -c user.email="test@test" commit -m "add existing" >/dev/null 2>&1
+
+  # Make changes: modify tracked file and add untracked file
+  printf "line1\nMODIFIED\nline3\nnewline4\n" > "${repo_dir}/existing.txt"
+  printf "brand new content\n" > "${repo_dir}/newfile.txt"
+
+  local payload
+  payload=$(jq -n \
+    --arg cwd "$repo_dir" \
+    '{
+      event: "agent-turn-complete",
+      "session-id": "sess-changes-test",
+      cwd: $cwd,
+      "input-messages": ["Make some changes"],
+      "last-assistant-message": "Done"
+    }')
+
+  local status
+  status=$(run_notify "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000901")
+
+  local text
+  text=$(jq -r '.text // ""' "$capture_file")
+
+  assert_zero "changed_files_exit" "$status"
+  assert_contains "changed_files_has_changes_label" "$text" "*Changes:*"
+  assert_contains "changed_files_has_existing" "$text" "existing.txt"
+  assert_contains "changed_files_has_existing_diff" "$text" "(+2 -1)"
+  assert_contains "changed_files_has_newfile" "$text" "newfile.txt"
+  assert_contains "changed_files_has_newfile_diff" "$text" "(+1 -0)"
+  assert_contains "changed_files_backtick_wrap" "$text" '`'
+
+  rm -rf "$tmp_dir"
+}
+
+test_no_changes_no_changes_block() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-no-changes.json"
+  local repo_dir="${tmp_dir}/repo"
+  mkdir -p "${test_home}/.codex"
+  write_mock_curl "$mock_bin"
+
+  # Set up a clean git repo
+  git init "$repo_dir" >/dev/null 2>&1
+  printf "clean\n" > "${repo_dir}/clean.txt"
+  git -C "$repo_dir" add -A >/dev/null 2>&1
+  git -C "$repo_dir" -c user.name="test" -c user.email="test@test" commit -m "init" >/dev/null 2>&1
+
+  local payload
+  payload=$(jq -n \
+    --arg cwd "$repo_dir" \
+    '{
+      event: "agent-turn-complete",
+      "session-id": "sess-no-changes",
+      cwd: $cwd,
+      "input-messages": ["Check status"],
+      "last-assistant-message": "All clean"
+    }')
+
+  local status
+  status=$(run_notify "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000902")
+
+  local text
+  text=$(jq -r '.text // ""' "$capture_file")
+
+  assert_zero "no_changes_exit" "$status"
+  assert_not_contains "no_changes_no_label" "$text" "*Changes:*"
+
+  rm -rf "$tmp_dir"
+}
+
 test_dual_tokens_followup_turn_includes_request_and_answer() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -630,6 +720,8 @@ main() {
   test_hook_event_session_id_is_supported
   test_invalid_session_id_uses_hashed_session_key
   test_symlink_thread_file_not_followed
+  test_changed_files_included_in_notification
+  test_no_changes_no_changes_block
   test_dual_tokens_split_posts
   test_dual_tokens_followup_turn_includes_request_and_answer
 
