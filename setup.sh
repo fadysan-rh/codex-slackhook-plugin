@@ -39,10 +39,14 @@ if [ ! -f "$input_file" ]; then
 fi
 
 awk -v notify_line="$notify_line" '
+function emit(s) {
+  print s
+  output_count += 1
+}
 BEGIN {
-  replaced = 0
-  seen_section = 0
+  inserted = 0
   skip_multiline = 0
+  output_count = 0
 }
 {
   line = $0
@@ -54,27 +58,27 @@ BEGIN {
     next
   }
 
-  if (line ~ /^[[:space:]]*\[/) {
-    seen_section = 1
-  }
-
-  if (seen_section == 0 && line ~ /^[[:space:]]*notify[[:space:]]*=/) {
-    print notify_line
-    replaced = 1
+  if (line ~ /^[[:space:]]*notify[[:space:]]*=/) {
     if (line ~ /\[/ && line !~ /\][[:space:]]*(#.*)?$/) {
       skip_multiline = 1
     }
     next
   }
 
-  print line
+  if (inserted == 0 && line ~ /^[[:space:]]*\[/) {
+    emit(notify_line)
+    emit("")
+    inserted = 1
+  }
+
+  emit(line)
 }
 END {
-  if (replaced == 0) {
-    if (NR > 0) {
-      print ""
+  if (inserted == 0) {
+    if (output_count > 0) {
+      emit("")
     }
-    print notify_line
+    emit(notify_line)
   }
 }
 ' "$input_file" > "$tmp_file"

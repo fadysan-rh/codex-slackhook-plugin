@@ -79,8 +79,7 @@ if (Test-Path -LiteralPath $configPath -PathType Leaf) {
 }
 
 $outputLines = New-Object "System.Collections.Generic.List[string]"
-$replaced = $false
-$seenSection = $false
+$inserted = $false
 $skipMultiline = $false
 
 foreach ($line in $inputLines) {
@@ -91,23 +90,23 @@ foreach ($line in $inputLines) {
     continue
   }
 
-  if ($line -match '^[ \t]*\[') {
-    $seenSection = $true
-  }
-
-  if (-not $seenSection -and $line -match '^[ \t]*notify[ \t]*=') {
-    $outputLines.Add($notifyLine)
-    $replaced = $true
-    if ($line -notmatch '\][ \t]*(#.*)?$') {
+  if ($line -match '^[ \t]*notify[ \t]*=') {
+    if ($line -match '\[' -and $line -notmatch '\][ \t]*(#.*)?$') {
       $skipMultiline = $true
     }
     continue
   }
 
+  if (-not $inserted -and $line -match '^[ \t]*\[') {
+    $outputLines.Add($notifyLine)
+    $outputLines.Add("")
+    $inserted = $true
+  }
+
   $outputLines.Add($line)
 }
 
-if (-not $replaced) {
+if (-not $inserted) {
   if ($outputLines.Count -gt 0) {
     $outputLines.Add("")
   }

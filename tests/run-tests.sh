@@ -362,12 +362,77 @@ test_dual_tokens_split_posts() {
   rm -rf "$tmp_dir"
 }
 
+test_setup_script_is_idempotent() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/codex-home"
+  local config_path="${test_home}/config.toml"
+  mkdir -p "$test_home"
+
+  cat > "$config_path" <<'EOF'
+model = "gpt-5"
+notify = "/legacy/top.sh"
+
+[notice]
+hide_gpt5_1_migration_prompt = true
+
+[notice.model_migrations]
+"gpt-5.2" = "gpt-5.2-codex"
+notify = [
+  "/legacy/array.sh"
+]
+notify = "/legacy/late.sh"
+EOF
+
+  CODEX_HOME="$test_home" bash "${ROOT_DIR}/setup.sh" >/dev/null 2>&1
+  CODEX_HOME="$test_home" bash "${ROOT_DIR}/setup.sh" >/dev/null 2>&1
+
+  local notify_lines
+  notify_lines=$(rg -n '^[[:space:]]*notify[[:space:]]*=' "$config_path" || true)
+  local notify_count
+  if [ -n "$notify_lines" ]; then
+    notify_count=$(printf "%s\n" "$notify_lines" | wc -l | tr -d ' ')
+  else
+    notify_count="0"
+  fi
+
+  local escaped_notify_path
+  escaped_notify_path=$(printf "%s" "${ROOT_DIR}/notify/codex-slack-notify.sh" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  local expected_notify_line
+  expected_notify_line="notify = \"${escaped_notify_path}\""
+  local actual_notify_line
+  actual_notify_line=$(printf "%s\n" "$notify_lines" | sed -E 's/^[0-9]+:[[:space:]]*//' | head -n 1)
+
+  local config_text
+  config_text=$(cat "$config_path")
+  local notify_line_no
+  notify_line_no=$(printf "%s\n" "$notify_lines" | head -n 1 | cut -d: -f1)
+  local first_section_line_no
+  first_section_line_no=$(rg -n '^[[:space:]]*\[' "$config_path" | head -n 1 | cut -d: -f1)
+
+  assert_equals "setup_idempotent_single_notify_line" "$notify_count" "1"
+  assert_equals "setup_idempotent_notify_line_value" "$actual_notify_line" "$expected_notify_line"
+  assert_not_contains "setup_idempotent_removed_legacy_top" "$config_text" "/legacy/top.sh"
+  assert_not_contains "setup_idempotent_removed_legacy_array" "$config_text" "/legacy/array.sh"
+  assert_not_contains "setup_idempotent_removed_legacy_late" "$config_text" "/legacy/late.sh"
+
+  if [ -n "$first_section_line_no" ] && [ "$notify_line_no" -lt "$first_section_line_no" ]; then
+    pass "setup_idempotent_notify_before_sections"
+  else
+    fail "setup_idempotent_notify_before_sections" "notify line must appear before first table section"
+  fi
+
+  rm -rf "$tmp_dir"
+}
+
 main() {
   if ! command -v jq >/dev/null 2>&1; then
     echo "[FAIL] setup: jq is required"
     exit 1
   fi
 
+  test_setup_script_is_idempotent
   test_ignore_non_target_event
   test_first_turn_starts_thread
   test_second_turn_reuses_thread

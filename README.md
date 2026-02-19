@@ -52,6 +52,7 @@ Slack:
 ### Option A: setup script (recommended)
 
 Installs/updates `notify` in Codex config using this repository's absolute path.
+Safe to rerun: `notify` is kept as a single entry (idempotent update).
 
 macOS/Linux:
 
