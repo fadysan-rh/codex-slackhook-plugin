@@ -342,6 +342,86 @@ test_current_notify_payload_is_supported() {
   rm -rf "$tmp_dir"
 }
 
+test_hook_event_session_id_is_supported() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_file="${tmp_dir}/capture-hook-session.json"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload
+  payload=$(render_fixture "${FIXTURES_DIR}/notify-hook-event-session.json" "${tmp_dir}/repo")
+
+  local status
+  status=$(run_notify "$payload" "$test_home" "$mock_bin" "$capture_file" "1710000000.000556")
+
+  local text
+  text=$(jq -r '.text // ""' "$capture_file")
+
+  assert_zero "hook_event_session_exit" "$status"
+  assert_contains "hook_event_session_request_text" "$text" "Hook event prompt"
+  assert_contains "hook_event_session_answer_text" "$text" "Hook event answer"
+  assert_file_exists "hook_event_session_thread_created" "${test_home}/.codex/.slack-thread-sess-hook-event"
+
+  rm -rf "$tmp_dir"
+}
+
+test_invalid_session_id_uses_hashed_session_key() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  local test_home="${tmp_dir}/home"
+  local mock_bin="${tmp_dir}/mock-bin"
+  local capture_first="${tmp_dir}/capture-invalid-first.json"
+  local capture_second="${tmp_dir}/capture-invalid-second.json"
+  mkdir -p "${test_home}/.codex" "${tmp_dir}/repo"
+  write_mock_curl "$mock_bin"
+
+  local payload1
+  local payload2
+  payload1=$(jq -n \
+    --arg cwd "${tmp_dir}/repo" \
+    '{
+      event: "agent-turn-complete",
+      "session-id": "session:bad/one",
+      cwd: $cwd,
+      "input-messages": ["Invalid session one"],
+      "last-assistant-message": "Answer one"
+    }')
+  payload2=$(jq -n \
+    --arg cwd "${tmp_dir}/repo" \
+    '{
+      event: "agent-turn-complete",
+      "session-id": "session:bad/two",
+      cwd: $cwd,
+      "input-messages": ["Invalid session two"],
+      "last-assistant-message": "Answer two"
+    }')
+
+  local status1
+  local status2
+  status1=$(run_notify "$payload1" "$test_home" "$mock_bin" "$capture_first" "1710000000.000601")
+  status2=$(run_notify "$payload2" "$test_home" "$mock_bin" "$capture_second" "1710000000.000602")
+
+  local thread_ts_first
+  local thread_ts_second
+  thread_ts_first=$(jq -r '.thread_ts // ""' "$capture_first")
+  thread_ts_second=$(jq -r '.thread_ts // ""' "$capture_second")
+  local sid_thread_count
+  sid_thread_count=$(find "${test_home}/.codex" -maxdepth 1 -type f -name '.slack-thread-sid-*' ! -name '*.cwd' | wc -l | tr -d ' ')
+
+  assert_zero "invalid_session_first_exit" "$status1"
+  assert_zero "invalid_session_second_exit" "$status2"
+  assert_equals "invalid_session_first_no_thread_ts" "$thread_ts_first" ""
+  assert_equals "invalid_session_second_no_thread_ts" "$thread_ts_second" ""
+  assert_equals "invalid_session_sid_thread_files" "$sid_thread_count" "2"
+
+  rm -rf "$tmp_dir"
+}
+
 test_symlink_thread_file_not_followed() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -547,6 +627,8 @@ main() {
   test_underscored_keys_are_supported
   test_after_agent_payload_is_supported
   test_current_notify_payload_is_supported
+  test_hook_event_session_id_is_supported
+  test_invalid_session_id_uses_hashed_session_key
   test_symlink_thread_file_not_followed
   test_dual_tokens_split_posts
   test_dual_tokens_followup_turn_includes_request_and_answer

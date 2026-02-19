@@ -144,6 +144,11 @@ resolve_session_key() {
     printf "%s" "$session_raw"
     return 0
   fi
+  if [ -n "$session_raw" ]; then
+    # Keep per-session thread separation even when session id has unsafe filename chars.
+    printf "sid-%s" "$(hash_text "$session_raw")"
+    return 0
+  fi
   printf "cwd-%s" "$(hash_text "${cwd:-unknown}")"
 }
 
@@ -334,7 +339,7 @@ main() {
   if [ -n "$user_token" ] && [ -n "$bot_token" ]; then
     dual_token_mode="true"
   fi
-  channel="${CODEX_SLACK_CHANNEL_ID:-}"
+  channel="${CODEX_SLACK_CHANNEL_ID:-${CODEX_SLACK_CHANNEL:-}}"
 
   if ! command -v jq >/dev/null 2>&1; then
     exit 0
@@ -351,7 +356,7 @@ main() {
   fi
 
   local event
-  event=$(printf "%s" "$payload" | jq -r '.event // .event_name // .type // .hook_name // .["hook-name"] // .hook_event.event_type // .hook_event["event-type"] // .hook_event.type // ""')
+  event=$(printf "%s" "$payload" | jq -r '.event // .event_name // .type // .hook_name // .["hook-name"] // .hook_event.event // .hook_event.event_name // .hook_event["event-name"] // .hook_event.event_type // .hook_event["event-type"] // .hook_event.type // ""')
   if ! is_target_event "$event"; then
     debug "EXIT: skip event=$event"
     exit 0
@@ -368,8 +373,9 @@ main() {
   local project_info
 
   cwd=$(printf "%s" "$payload" | jq -r '.cwd // .workdir // .current_dir // .["current-dir"] // .hook_event.cwd // .hook_event.workdir // ""')
-  session_raw=$(printf "%s" "$payload" | jq -r '.session_id // .sessionId // .["session-id"] // .thread_id // .threadId // .["thread-id"] // .hook_event.thread_id // .hook_event.threadId // .hook_event["thread-id"] // ""')
+  session_raw=$(printf "%s" "$payload" | jq -r '.session_id // .sessionId // .["session-id"] // .thread_id // .threadId // .["thread-id"] // .conversation_id // .conversationId // .["conversation-id"] // .run_id // .runId // .["run-id"] // .session.id // .hook_event.session_id // .hook_event.sessionId // .hook_event["session-id"] // .hook_event.thread_id // .hook_event.threadId // .hook_event["thread-id"] // .hook_event.conversation_id // .hook_event.conversationId // .hook_event["conversation-id"] // .hook_event.run_id // .hook_event.runId // .hook_event["run-id"] // .hook_event.session.id // .metadata.session_id // .metadata.sessionId // .metadata["session-id"] // ""')
   turn_id=$(printf "%s" "$payload" | jq -r '.turn_id // .turnId // .["turn-id"] // .hook_event.turn_id // .hook_event.turnId // .hook_event["turn-id"] // ""')
+  debug "parsed event=${event:-unknown} session_raw=${session_raw:-empty} turn_id=${turn_id:-empty} cwd=${cwd:-empty}"
 
   request_raw=$(extract_last_user_text "$payload")
   answer_raw=$(extract_last_assistant_text "$payload")
@@ -380,6 +386,11 @@ main() {
   fi
 
   session_key=$(resolve_session_key "$session_raw" "$cwd")
+  if [ -z "$session_raw" ]; then
+    debug "WARN: missing session id, fallback to cwd-based key"
+  elif ! is_valid_session_id "$session_raw"; then
+    debug "WARN: session id contains unsafe chars, hashed session key is used"
+  fi
   project_info=$(build_project_info "$cwd")
 
   request_text=$(escape_mrkdwn "${request_raw:0:1200}")

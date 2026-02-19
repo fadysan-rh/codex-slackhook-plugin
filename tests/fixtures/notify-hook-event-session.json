@@ -1,0 +1,14 @@
+{
+  "event": "agent-turn-complete",
+  "hook_event": {
+    "session_id": "sess-hook-event",
+    "cwd": "__CWD__",
+    "input_messages": [
+      {
+        "role": "user",
+        "content": "Hook event prompt"
+      }
+    ],
+    "last_assistant_message": "Hook event answer"
+  }
+}
